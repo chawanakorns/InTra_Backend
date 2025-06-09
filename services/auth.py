@@ -59,7 +59,9 @@ async def register_user(user: UserCreate) -> UserResponse:
             return UserResponse(
                 id=new_user.id,
                 full_name=new_user.full_name,
-                email=new_user.email
+                email=new_user.email,
+                date_of_birth=new_user.date_of_birth,
+                gender=new_user.gender
             )
 
         except HTTPException:
@@ -77,7 +79,6 @@ async def register_user(user: UserCreate) -> UserResponse:
 async def authenticate_user(email: str, password: str) -> dict:
     async with get_db_session() as session:
         try:
-            # Find user by email
             stmt = select(User).where(User.email == email)
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
@@ -87,6 +88,9 @@ async def authenticate_user(email: str, password: str) -> dict:
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid credentials"
                 )
+
+            # Debug print
+            print(f"Creating token for user: {user.email}")
 
             access_token = create_access_token(data={"sub": user.email})
             return {"access_token": access_token, "token_type": "bearer"}
@@ -132,7 +136,9 @@ async def get_current_user(token: str) -> UserResponse:
             return UserResponse(
                 id=user.id,
                 full_name=user.full_name,
-                email=user.email
+                email=user.email,
+                date_of_birth=user.date_of_birth,
+                gender=user.gender
             )
 
         except HTTPException:

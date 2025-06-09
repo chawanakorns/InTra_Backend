@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, Integer, String, Date, Text
+from sqlalchemy import Column, Integer, String, Date, Text, Boolean, JSON
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -34,11 +34,9 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False
 )
 
-
 # Base class for models
 class Base(DeclarativeBase):
     pass
-
 
 # User model
 class User(Base):
@@ -50,7 +48,12 @@ class User(Base):
     gender = Column(String(20), nullable=True)
     email = Column(Text, unique=True, nullable=False, index=True)
     password = Column(String(255), nullable=False)
-
+    has_completed_personalization = Column(Boolean, default=False)
+    tourist_type = Column(JSON, nullable=True)
+    preferred_activities = Column(JSON, nullable=True)
+    preferred_cuisines = Column(JSON, nullable=True)
+    preferred_dining = Column(JSON, nullable=True)
+    preferred_times = Column(JSON, nullable=True)
 
 # Dependency to get database session
 async def get_db():
@@ -60,7 +63,6 @@ async def get_db():
         finally:
             await session.close()
 
-
 # Context manager for database sessions
 @asynccontextmanager
 async def get_db_session():
@@ -69,7 +71,6 @@ async def get_db_session():
             yield session
         finally:
             await session.close()
-
 
 # Initialize database tables
 async def init_db():

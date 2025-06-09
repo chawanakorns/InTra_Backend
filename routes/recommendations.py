@@ -24,11 +24,7 @@ async def get_restaurant_recommendations(
     latitude: float = Query(..., description="Latitude of user's location"),
     longitude: float = Query(..., description="Longitude of user's location")
 ):
-    """
-    Get restaurant recommendations near the specified location.
-    """
     try:
-        # Fetch from Google Places API for restaurants
         url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=2000&type=restaurant&key={GOOGLE_PLACES_API_KEY}"
         response = requests.get(url)
         response.raise_for_status()
@@ -67,11 +63,7 @@ async def get_attraction_recommendations(
     latitude: float = Query(..., description="Latitude of user's location"),
     longitude: float = Query(..., description="Longitude of user's location")
 ):
-    """
-    Get attraction recommendations near the specified location.
-    """
     try:
-        # Fetch from Google Places API for attractions
         url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=2000&type=tourist_attraction&key={GOOGLE_PLACES_API_KEY}"
         response = requests.get(url)
         response.raise_for_status()

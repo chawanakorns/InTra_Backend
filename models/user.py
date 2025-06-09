@@ -1,7 +1,6 @@
 from pydantic import BaseModel, EmailStr, validator
-from typing import Literal, Optional
+from typing import Literal, Optional, List
 from datetime import date
-
 
 class UserCreate(BaseModel):
     full_name: str
@@ -22,6 +21,12 @@ class UserCreate(BaseModel):
             raise ValueError('Password must be at least 6 characters long')
         return v
 
+class UserPersonalization(BaseModel):
+    tourist_type: Optional[List[str]] = None
+    preferred_activities: Optional[List[str]] = None
+    preferred_cuisines: Optional[List[str]] = None
+    preferred_dining: Optional[List[str]] = None
+    preferred_times: Optional[List[str]] = None
 
 class UserResponse(BaseModel):
     id: int
@@ -29,10 +34,15 @@ class UserResponse(BaseModel):
     email: EmailStr
     date_of_birth: Optional[date] = None
     gender: Optional[str] = None
+    has_completed_personalization: bool
+    tourist_type: Optional[List[str]] = None
+    preferred_activities: Optional[List[str]] = None
+    preferred_cuisines: Optional[List[str]] = None
+    preferred_dining: Optional[List[str]] = None
+    preferred_times: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
-
 
 class Token(BaseModel):
     access_token: str

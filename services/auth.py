@@ -11,9 +11,7 @@ SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-
 async def register_user(user: UserCreate) -> UserResponse:
-    # Convert date_of_birth string to datetime.date
     try:
         dob = datetime.strptime(user.date_of_birth, "%Y-%m-%d").date()
     except ValueError:
@@ -22,7 +20,6 @@ async def register_user(user: UserCreate) -> UserResponse:
             detail="Invalid date_of_birth format. Use YYYY-MM-DD."
         )
 
-    # Validate gender input
     valid_genders = ["Male", "Female", "Other", "Prefer not to say"]
     if user.gender not in valid_genders:
         raise HTTPException(
@@ -32,7 +29,6 @@ async def register_user(user: UserCreate) -> UserResponse:
 
     async with get_db_session() as session:
         try:
-            # Check if user already exists
             stmt = select(User).where(User.email == user.email)
             result = await session.execute(stmt)
             existing_user = result.scalar_one_or_none()
@@ -43,7 +39,6 @@ async def register_user(user: UserCreate) -> UserResponse:
                     detail="Email already registered"
                 )
 
-            # Create new user
             new_user = User(
                 full_name=user.full_name,
                 date_of_birth=dob,
@@ -61,7 +56,13 @@ async def register_user(user: UserCreate) -> UserResponse:
                 full_name=new_user.full_name,
                 email=new_user.email,
                 date_of_birth=new_user.date_of_birth,
-                gender=new_user.gender
+                gender=new_user.gender,
+                has_completed_personalization=new_user.has_completed_personalization,
+                tourist_type=new_user.tourist_type,
+                preferred_activities=new_user.preferred_activities,
+                preferred_cuisines=new_user.preferred_cuisines,
+                preferred_dining=new_user.preferred_dining,
+                preferred_times=new_user.preferred_times
             )
 
         except HTTPException:
@@ -74,7 +75,6 @@ async def register_user(user: UserCreate) -> UserResponse:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Registration failed due to database error"
             )
-
 
 async def authenticate_user(email: str, password: str) -> dict:
     async with get_db_session() as session:
@@ -89,7 +89,6 @@ async def authenticate_user(email: str, password: str) -> dict:
                     detail="Invalid credentials"
                 )
 
-            # Debug print
             print(f"Creating token for user: {user.email}")
 
             access_token = create_access_token(data={"sub": user.email})
@@ -103,7 +102,6 @@ async def authenticate_user(email: str, password: str) -> dict:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Authentication failed due to database error"
             )
-
 
 async def get_current_user(token: str) -> UserResponse:
     try:
@@ -122,7 +120,6 @@ async def get_current_user(token: str) -> UserResponse:
 
     async with get_db_session() as session:
         try:
-            # Find user by email
             stmt = select(User).where(User.email == email)
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
@@ -138,7 +135,13 @@ async def get_current_user(token: str) -> UserResponse:
                 full_name=user.full_name,
                 email=user.email,
                 date_of_birth=user.date_of_birth,
-                gender=user.gender
+                gender=user.gender,
+                has_completed_personalization=user.has_completed_personalization,
+                tourist_type=user.tourist_type,
+                preferred_activities=user.preferred_activities,
+                preferred_cuisines=user.preferred_cuisines,
+                preferred_dining=user.preferred_dining,
+                preferred_times=user.preferred_times
             )
 
         except HTTPException:

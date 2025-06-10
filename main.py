@@ -27,6 +27,7 @@ app.include_router(recommendations_router, prefix="/api", tags=["recommendations
 async def root():
     return {"message": "InTra API"}
 
+
 @app.on_event("startup")
 async def startup_event():
     print(f"Connecting to database: {os.getenv('DB_NAME', 'Intra_DB')} at {os.getenv('DB_HOST', 'localhost')}")

@@ -1,9 +1,10 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, Integer, String, Date, Text, Boolean, JSON
+from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy import Column, Integer, String, Date, Text, Boolean, JSON, ForeignKey
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -34,9 +35,11 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False
 )
 
+
 # Base class for models
 class Base(DeclarativeBase):
     pass
+
 
 # User model
 class User(Base):
@@ -55,6 +58,25 @@ class User(Base):
     preferred_dining = Column(JSON, nullable=True)
     preferred_times = Column(JSON, nullable=True)
 
+    itineraries = relationship("Itinerary", back_populates="user")
+
+
+# Itinerary model
+class Itinerary(Base):
+    __tablename__ = "itineraries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    type = Column(String(50), nullable=False)
+    budget = Column(String(50), nullable=False)
+    name = Column(String(255), nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    schedule = Column(JSON, nullable=True)
+
+    user = relationship("User", back_populates="itineraries")
+
+
 # Dependency to get database session
 async def get_db():
     async with AsyncSessionLocal() as session:
@@ -62,6 +84,7 @@ async def get_db():
             yield session
         finally:
             await session.close()
+
 
 # Context manager for database sessions
 @asynccontextmanager
@@ -71,6 +94,7 @@ async def get_db_session():
             yield session
         finally:
             await session.close()
+
 
 # Initialize database tables
 async def init_db():

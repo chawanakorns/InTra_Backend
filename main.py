@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.auth import router as auth_router
 from routes.recommendations import router as recommendations_router
+from routes.itinerary import router as itinerary_router
 from database.db import init_db
 from dotenv import load_dotenv
 import os
@@ -22,11 +23,11 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(recommendations_router, prefix="/api", tags=["recommendations"])
+app.include_router(itinerary_router, prefix="/api/itineraries", tags=["itineraries"])
 
 @app.get("/")
 async def root():
     return {"message": "InTra API"}
-
 
 @app.on_event("startup")
 async def startup_event():

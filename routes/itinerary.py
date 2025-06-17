@@ -98,6 +98,7 @@ async def create_itinerary(
         await db.commit()
         await db.refresh(db_itinerary)
 
+        # Convert SQLAlchemy model to Pydantic model, including the empty schedule_items
         return Itinerary(
             id=db_itinerary.id,
             type=db_itinerary.type,
@@ -106,6 +107,7 @@ async def create_itinerary(
             start_date=db_itinerary.start_date,
             end_date=db_itinerary.end_date,
             user_id=db_itinerary.user_id,
+            schedule_items=[]
         )
     except Exception as e:
         await db.rollback()

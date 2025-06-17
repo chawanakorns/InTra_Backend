@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
-from sqlalchemy import Column, Integer, String, Date, Text, Boolean, JSON, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, Text, Boolean, JSON, ForeignKey, Float
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -72,10 +72,29 @@ class Itinerary(Base):
     name = Column(String(255), nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
-    schedule = Column(JSON, nullable=True)
+    # schedule = Column(JSON, nullable=True) # Remove schedule column
 
     user = relationship("User", back_populates="itineraries")
+    schedule_items = relationship("ScheduleItem", back_populates="itinerary") # this
 
+# ScheduleItem model
+class ScheduleItem(Base):
+    __tablename__ = "schedule_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    itinerary_id = Column(Integer, ForeignKey("itineraries.id"), nullable=False)
+    place_id = Column(String(255), nullable=False)
+    place_name = Column(String(255), nullable=False)
+    place_type = Column(String(255), nullable=True)
+    place_address = Column(String(255), nullable=True)
+    place_rating = Column(Float, nullable=True)
+    place_image = Column(Text, nullable=True)  # Change to Text or increase String length
+    scheduled_date = Column(Date, nullable=False)
+    scheduled_time = Column(String(50), nullable=False)
+    duration_minutes = Column(Integer, default=60)
+    # You might also include other relevant fields from the Place data
+
+    itinerary = relationship("Itinerary", back_populates="schedule_items")
 
 # Dependency to get database session
 async def get_db():

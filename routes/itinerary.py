@@ -116,53 +116,6 @@ async def create_itinerary(
             detail=f"Failed to create itinerary: {str(e)}",
         )
 
-@router.get("/{itinerary_id}/items", response_model=List[ScheduleItem])
-async def get_itinerary_schedule_items(
-    itinerary_id: int,
-    current_user: UserResponse = Depends(get_current_user_dependency),
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        # Verify that the itinerary exists and belongs to the user
-        stmt = select(ItineraryModel).where(
-            ItineraryModel.id == itinerary_id, ItineraryModel.user_id == current_user.id
-        )
-        result = await db.execute(stmt)
-        itinerary = result.scalars().first()
-
-        if not itinerary:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Itinerary not found"
-            )
-
-        # Fetch schedule items for the itinerary
-        schedule_items_stmt = select(ScheduleItemModel).where(ScheduleItemModel.itinerary_id == itinerary_id)
-        schedule_items_result = await db.execute(schedule_items_stmt)
-        schedule_items = schedule_items_result.scalars().all()
-
-        # Convert SQLAlchemy models to Pydantic models
-        schedule_item_list = [
-            ScheduleItem(
-                place_id=item.place_id,
-                place_name=item.place_name,
-                place_type=item.place_type,
-                place_address=item.place_address,
-                place_rating=item.place_rating,
-                place_image=item.place_image,
-                scheduled_date=item.scheduled_date.strftime(
-                    "%Y-%m-%d"),  # Format date as string
-                scheduled_time=item.scheduled_time,
-                duration_minutes=item.duration_minutes,
-            ) for item in schedule_items
-        ]
-
-        return schedule_item_list
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}"
-        )
-
 @router.post("/{itinerary_id}/items", response_model=ScheduleItem)
 async def add_item_to_itinerary(
     itinerary_id: int,
@@ -220,7 +173,7 @@ async def add_item_to_itinerary(
         )
 
 
-@router.get("/{itinerary_id}/items", response_model=List[ScheduleItem])  # ADD THIS
+@router.get("/{itinerary_id}/items", response_model=List[ScheduleItem])
 async def get_schedule_items_for_itinerary(
     itinerary_id: int,
     current_user: UserResponse = Depends(get_current_user_dependency),

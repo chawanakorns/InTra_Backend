@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from models.user import UserResponse
 from routes.auth import get_current_user_dependency
 import logging
+import time
 
 router = APIRouter()
 
@@ -134,32 +135,68 @@ async def get_personalized_places(
         user_preferences: dict,
         place_category: str = "tourist_attraction"
 ) -> List[Place]:
+    """
+    Fetches places from Google Places API, handling pagination to get more results
+    and falling back to a broader search if necessary.
+    """
+    all_results = []
+    last_status = ""
+
+    # Function to fetch pages of results
+    def fetch_pages(base_url: str):
+        nonlocal last_status
+        page_results = []
+        url = base_url
+        # Fetch up to 3 pages (approx. 60 results)
+        for _ in range(3):
+            try:
+                response = requests.get(url)
+                data = response.json()
+                last_status = data.get('status')
+
+                if last_status == 'OK':
+                    page_results.extend(data['results'])
+                    next_page_token = data.get('next_page_token')
+                    if next_page_token:
+                        # Wait for the token to become valid
+                        time.sleep(2)
+                        url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?pagetoken={next_page_token}&key={GOOGLE_PLACES_API_KEY}"
+                    else:
+                        # No more pages
+                        break
+                elif last_status == 'ZERO_RESULTS':
+                    break  # No results, stop trying
+                else:
+                    logger.error(f"Google Places API error on a page: {last_status}")
+                    break
+            except Exception as e:
+                logger.error(f"HTTP request failed during pagination: {str(e)}")
+                break
+        return page_results
+
     try:
         # Try specific types first
         types_query = build_place_types_query(user_preferences, place_category)
         logger.info(f"Searching for {place_category} with types: {types_query}")
+        primary_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=20000&type={types_query}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
+        all_results = fetch_pages(primary_url)
 
-        url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=5000&type={types_query}&key={GOOGLE_PLACES_API_KEY}"
-        response = requests.get(url)
-        data = response.json()
-
-        if data['status'] == 'OK' and len(data['results']) > 0:
-            return process_results(data, place_category, user_preferences)
+        if all_results:
+            return process_results(all_results, place_category, user_preferences)
 
         # If no results, fall back to a broader search
         logger.warning(
             f"No results for specific types: {types_query}. Falling back to general '{place_category}' search.")
         fallback_type = "tourist_attraction" if place_category == "tourist_attraction" else "restaurant"
-        url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=5000&type={fallback_type}&key={GOOGLE_PLACES_API_KEY}"
-        response = requests.get(url)
-        data = response.json()
+        fallback_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=20000&type={fallback_type}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
+        all_results = fetch_pages(fallback_url)
 
-        if data['status'] != 'OK':
-            logger.error(f"Google Places API error: {data['status']}")
-            raise HTTPException(status_code=400, detail=f"Google Places API error: {data['status']}")
+        if not all_results and last_status not in ['OK', 'ZERO_RESULTS']:
+            logger.error(f"Google Places API error after fallback: {last_status}")
+            raise HTTPException(status_code=400, detail=f"Google Places API error: {last_status}")
 
-        places = process_results(data, place_category, user_preferences)
-        logger.info(f"Found {len(places)} places using fallback query")
+        places = process_results(all_results, place_category, user_preferences)
+        logger.info(f"Found {len(places)} unique places using fallback query")
         return places
 
     except Exception as e:
@@ -167,28 +204,40 @@ async def get_personalized_places(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def process_results(data, place_category, user_preferences):
+def process_results(all_place_results: List[dict], place_category: str, user_preferences: dict) -> List[dict]:
+    """
+    Processes a list of place results, filters them, calculates relevance,
+    and removes duplicates based on the place name.
+    """
     places = []
-    for place in data['results']:
+    seen_names = set()  # Set to track names of places already added
+
+    for place in all_place_results:
+        place_name = place.get('name')
+        # NEW: Skip if the place has no name or if the name has already been processed
+        if not place_name or place_name in seen_names:
+            continue
+
+        # Filter restaurants vs attractions
+        place_types = place.get('types', [])
+        is_food_place = any(t in place_types for t in ["restaurant", "cafe", "bakery", "meal_takeaway", "food"])
+
+        if place_category == "restaurant" and not is_food_place:
+            continue
+        elif place_category == "tourist_attraction" and is_food_place:
+            continue
+
+        # Create place object
         image = None
         if 'photos' in place and place['photos']:
             photo_ref = place['photos'][0]['photo_reference']
             image = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_ref}&key={GOOGLE_PLACES_API_KEY}"
 
-        place_types = place.get('types', [])
         relevance = calculate_relevance(place_types, user_preferences)
-
-        # Filter restaurants vs attractions
-        if place_category == "restaurant":
-            if not any(t in place_types for t in ["restaurant", "cafe", "bakery", "meal_takeaway", "food"]):
-                continue
-        elif place_category == "tourist_attraction":
-            if any(t in place_types for t in ["restaurant", "cafe", "bakery", "meal_takeaway"]):
-                continue
 
         places.append({
             "id": place['place_id'],
-            "name": place['name'],
+            "name": place_name,
             "rating": place.get('rating', 0),
             "image": image,
             "address": place.get('vicinity') or place.get('formatted_address'),
@@ -198,9 +247,13 @@ def process_results(data, place_category, user_preferences):
             "placeId": place['place_id'],
             "relevance_score": relevance
         })
+        # NEW: Add the name to our set of seen names
+        seen_names.add(place_name)
 
-    places.sort(key=lambda x: (-x['relevance_score'], -x['rating']))
-    logger.info(f"Found {len(places)} {place_category} places")
+    # Sort by relevance and then by rating
+    places.sort(key=lambda x: (x.get('relevance_score', 0), x.get('rating', 0)), reverse=True)
+    logger.info(
+        f"Processed and de-duplicated {len(all_place_results)} results into {len(places)} unique {place_category} places")
     return places
 
 

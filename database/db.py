@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
-from sqlalchemy import Column, Integer, String, Date, Text, Boolean, JSON, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Date, Text, Boolean, JSON, ForeignKey, Float, UniqueConstraint
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -58,7 +58,8 @@ class User(Base):
     preferred_dining = Column(JSON, nullable=True)
     preferred_times = Column(JSON, nullable=True)
 
-    itineraries = relationship("Itinerary", back_populates="user")
+    itineraries = relationship("Itinerary", back_populates="user", cascade="all, delete-orphan")
+    bookmarks = relationship("Bookmark", back_populates="user", cascade="all, delete-orphan")
 
 
 # Itinerary model
@@ -72,10 +73,10 @@ class Itinerary(Base):
     name = Column(String(255), nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
-    # schedule = Column(JSON, nullable=True) # Remove schedule column
 
     user = relationship("User", back_populates="itineraries")
-    schedule_items = relationship("ScheduleItem", back_populates="itinerary") # this
+    schedule_items = relationship("ScheduleItem", back_populates="itinerary", cascade="all, delete-orphan")
+
 
 # ScheduleItem model
 class ScheduleItem(Base):
@@ -88,13 +89,32 @@ class ScheduleItem(Base):
     place_type = Column(String(255), nullable=True)
     place_address = Column(String(255), nullable=True)
     place_rating = Column(Float, nullable=True)
-    place_image = Column(Text, nullable=True)  # Change to Text or increase String length
+    place_image = Column(Text, nullable=True)
     scheduled_date = Column(Date, nullable=False)
     scheduled_time = Column(String(50), nullable=False)
     duration_minutes = Column(Integer, default=60)
-    # You might also include other relevant fields from the Place data
 
     itinerary = relationship("Itinerary", back_populates="schedule_items")
+
+
+# Bookmark model
+class Bookmark(Base):
+    __tablename__ = "bookmarks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    place_id = Column(String(255), nullable=False)
+    place_name = Column(String(255), nullable=False)
+    place_type = Column(String(255), nullable=True)
+    place_address = Column(String(255), nullable=True)
+    place_rating = Column(Float, nullable=True)
+    place_image = Column(Text, nullable=True)
+
+    user = relationship("User", back_populates="bookmarks")
+
+    # FIX: Corrected 'user_d' to 'user_id'
+    __table_args__ = (UniqueConstraint('user_id', 'place_id', name='_user_place_uc'),)
+
 
 # Dependency to get database session
 async def get_db():

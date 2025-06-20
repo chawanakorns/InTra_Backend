@@ -4,11 +4,10 @@ from typing import List, Optional
 
 class ItineraryBase(BaseModel):
     type: str
-    budget: str
+    budget: Optional[str] = None
     name: str
     start_date: date
     end_date: date
-    schedule: Optional[List] = None
 
 class ItineraryCreate(ItineraryBase):
     pass

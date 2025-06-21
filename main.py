@@ -1,13 +1,36 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routes.auth import router as auth_router
+from routes.recommendations import router as recommendations_router
+from routes.itinerary import router as itinerary_router
+from routes.bookmarks import router as bookmark_router # <-- IMPORT THIS
+from database.db import init_db
+from dotenv import load_dotenv
+import os
 
-app = FastAPI()
+load_dotenv()
 
+app = FastAPI(title="InTra API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(recommendations_router, prefix="/api", tags=["recommendations"])
+app.include_router(itinerary_router, prefix="/api/itineraries", tags=["itineraries"])
+app.include_router(bookmark_router, prefix="/api/bookmarks", tags=["bookmarks"])
 
 @app.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "InTra API"}
 
-
-@app.get("/hello/{name}")
-async def say_hello(name: str):
-    return {"message": f"Hello {name}"}
+@app.on_event("startup")
+async def startup_event():
+    print(f"Connecting to database: {os.getenv('DB_NAME', 'Intra_DB')} at {os.getenv('DB_HOST', 'localhost')}")
+    await init_db()

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, validator
 from typing import Literal, Optional, List
-from datetime import date
+from datetime import date, datetime
 
 class UserCreate(BaseModel):
     full_name: str
@@ -28,6 +28,15 @@ class UserPersonalization(BaseModel):
     preferred_dining: Optional[List[str]] = None
     preferred_times: Optional[List[str]] = None
 
+class UserUpdate(BaseModel):
+    fullName: Optional[str] = None
+    aboutMe: Optional[str] = None
+    dob: Optional[str] = None
+    gender: Optional[str] = None
+    email: Optional[EmailStr] = None
+    imageUri: Optional[str] = None
+    backgroundUri: Optional[str] = None
+
 class UserResponse(BaseModel):
     id: int
     full_name: str
@@ -35,6 +44,9 @@ class UserResponse(BaseModel):
     date_of_birth: Optional[date] = None
     gender: Optional[str] = None
     has_completed_personalization: bool
+    about_me: Optional[str] = None
+    image_uri: Optional[str] = None
+    background_uri: Optional[str] = None
     tourist_type: Optional[List[str]] = None
     preferred_activities: Optional[List[str]] = None
     preferred_cuisines: Optional[List[str]] = None

@@ -9,7 +9,8 @@ from utils.security import hash_password, verify_password, create_access_token
 
 SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 43200
+
 
 async def register_user(user: UserCreate) -> UserResponse:
     try:
@@ -51,19 +52,7 @@ async def register_user(user: UserCreate) -> UserResponse:
             await session.commit()
             await session.refresh(new_user)
 
-            return UserResponse(
-                id=new_user.id,
-                full_name=new_user.full_name,
-                email=new_user.email,
-                date_of_birth=new_user.date_of_birth,
-                gender=new_user.gender,
-                has_completed_personalization=new_user.has_completed_personalization,
-                tourist_type=new_user.tourist_type,
-                preferred_activities=new_user.preferred_activities,
-                preferred_cuisines=new_user.preferred_cuisines,
-                preferred_dining=new_user.preferred_dining,
-                preferred_times=new_user.preferred_times
-            )
+            return UserResponse.from_orm(new_user)
 
         except HTTPException:
             await session.rollback()
@@ -75,6 +64,7 @@ async def register_user(user: UserCreate) -> UserResponse:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Registration failed due to database error"
             )
+
 
 async def authenticate_user(email: str, password: str) -> dict:
     async with get_db_session() as session:
@@ -103,6 +93,7 @@ async def authenticate_user(email: str, password: str) -> dict:
                 detail="Authentication failed due to database error"
             )
 
+
 async def get_current_user(token: str) -> UserResponse:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -130,19 +121,7 @@ async def get_current_user(token: str) -> UserResponse:
                     detail="User not found"
                 )
 
-            return UserResponse(
-                id=user.id,
-                full_name=user.full_name,
-                email=user.email,
-                date_of_birth=user.date_of_birth,
-                gender=user.gender,
-                has_completed_personalization=user.has_completed_personalization,
-                tourist_type=user.tourist_type,
-                preferred_activities=user.preferred_activities,
-                preferred_cuisines=user.preferred_cuisines,
-                preferred_dining=user.preferred_dining,
-                preferred_times=user.preferred_times
-            )
+            return UserResponse.from_orm(user)
 
         except HTTPException:
             raise

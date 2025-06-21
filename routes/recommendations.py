@@ -5,6 +5,7 @@ import requests
 import google.generativeai as genai
 from pydantic import BaseModel
 from models.user import UserResponse
+from models.recommendations import Place
 from routes.auth import get_current_user_dependency
 import logging
 import time
@@ -27,7 +28,6 @@ if not GEMINI_API_KEY:
     # raise ValueError("GOOGLE_GEMINI_API_KEY environment variable not set")
 else:
     genai.configure(api_key=GEMINI_API_KEY)
-    # --- FIX: Switched to the latest, most stable, and recommended model ---
     generation_model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 # Simple in-memory cache. For production, consider using Redis or a database.
@@ -59,19 +59,6 @@ PREFERENCE_MAPPING = {
         "Scenic Views": ["restaurant"]
     }
 }
-
-
-class Place(BaseModel):
-    id: str
-    name: str
-    rating: float
-    image: str | None = None
-    address: str | None = None
-    priceLevel: int | None = None
-    isOpen: bool | None = None
-    types: List[str] | None = None
-    placeId: str
-    relevance_score: float | None = None
 
 
 class PlaceDetails(Place):
@@ -166,7 +153,9 @@ async def get_personalized_places(
 
         all_results = fetch_pages(primary_url)
         if all_results:
-            return process_results(all_results, place_category, user_preferences)
+            # --- FIX: Convert dicts to Place objects before returning ---
+            processed_places = process_results(all_results, place_category, user_preferences)
+            return [Place(**p) for p in processed_places]
 
         logger.warning(f"No results for specific types: {types_query}. Falling back to general search.")
         fallback_type = "tourist_attraction" if place_category == "tourist_attraction" else "restaurant"
@@ -177,9 +166,10 @@ async def get_personalized_places(
         if not all_results and last_status not in ['OK', 'ZERO_RESULTS']:
             raise HTTPException(status_code=400, detail=f"Google Places API error: {last_status}")
 
-        places = process_results(all_results, place_category, user_preferences)
-        logger.info(f"Found {len(places)} unique places using fallback query")
-        return places
+        places_as_dicts = process_results(all_results, place_category, user_preferences)
+        logger.info(f"Found {len(places_as_dicts)} unique places using fallback query")
+        # --- FIX: Convert dicts to Place objects before returning ---
+        return [Place(**p) for p in places_as_dicts]
     except Exception as e:
         logger.error(f"Error getting personalized places: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -295,8 +285,10 @@ async def get_popular_destinations():
         status = data.get('status')
         if status == 'OK':
             raw_places = [p for p in data.get('results', []) if p.get('rating', 0) >= 4.3 and 'photos' in p]
-            places = process_results(raw_places, "tourist_attraction", {})
-            places.sort(key=lambda x: x.get('rating', 0), reverse=True)
+            # --- FIX: Convert dicts to Place objects before returning ---
+            places_as_dicts = process_results(raw_places, "tourist_attraction", {})
+            places_as_dicts.sort(key=lambda x: x.get('rating', 0), reverse=True)
+            places = [Place(**p) for p in places_as_dicts]
             logger.info(f"Found {len(places)} popular destinations.")
         else:
             logger.error(f"Google Places API error: {status} - {data.get('error_message', '')}")
@@ -318,7 +310,8 @@ async def get_place_details_and_description(place_id: str):
     if place_id in description_cache:
         cached_data = description_cache[place_id]
         logger.info(f"Serving cached details for place_id: {place_id}")
-        return cached_data
+        # --- FIX: Ensure cached data is also a model instance ---
+        return PlaceDetails(**cached_data) if isinstance(cached_data, dict) else cached_data
 
     logger.info(f"Fetching fresh details from Google Places for place_id: {place_id}")
     fields = "name,place_id,formatted_address,rating,types,photos,opening_hours,price_level,reviews"
@@ -383,6 +376,7 @@ async def get_place_details_and_description(place_id: str):
         "relevance_score": 0.5
     }
 
-    description_cache[place_id] = full_details
+    response_model = PlaceDetails(**full_details)
+    description_cache[place_id] = response_model.dict()  # Cache the dict representation
 
-    return full_details
+    return response_model

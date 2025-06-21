@@ -10,8 +10,10 @@ from datetime import datetime
 from services.generation_service import auto_generate_schedule
 from routes.recommendations import get_personalized_places
 from models.recommendations import Place
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def convert_to_pydantic(db_itinerary: ItineraryModel) -> ItineraryResponse:
@@ -62,7 +64,6 @@ async def get_user_itineraries(
         )
 
 
-# MODIFIED FUNCTION
 @router.post("/", response_model=ItineraryResponse)
 async def create_itinerary(
         itinerary: ItineraryCreate,
@@ -70,10 +71,13 @@ async def create_itinerary(
         db: AsyncSession = Depends(get_db),
 ):
     try:
+        # Provide a default value for budget if it's missing from the request.
+        budget_value = itinerary.budget if itinerary.budget else "Not Specified"
+
         db_itinerary = ItineraryModel(
             user_id=current_user.id,
             type=itinerary.type,
-            budget=itinerary.budget,
+            budget=budget_value,  # Use the validated budget value
             name=itinerary.name,
             start_date=itinerary.start_date,
             end_date=itinerary.end_date,
@@ -82,8 +86,6 @@ async def create_itinerary(
         await db.commit()
         await db.refresh(db_itinerary)
 
-        # FIX: Construct the response manually to avoid lazy-loading schedule_items.
-        # We know it will be empty, so there is no need to query for it.
         return ItineraryResponse(
             id=db_itinerary.id,
             type=db_itinerary.type,
@@ -92,7 +94,7 @@ async def create_itinerary(
             start_date=db_itinerary.start_date,
             end_date=db_itinerary.end_date,
             user_id=db_itinerary.user_id,
-            schedule_items=[]  # Explicitly provide an empty list
+            schedule_items=[]
         )
     except Exception as e:
         await db.rollback()
@@ -131,10 +133,13 @@ async def generate_itinerary(
                 detail="Failed to generate itinerary schedule from AI. Please try again."
             )
 
+        # Provide a default value for budget if it's missing from the request.
+        budget_value = itinerary_data.budget if itinerary_data.budget else "Not Specified"
+
         db_itinerary = ItineraryModel(
             user_id=current_user.id,
             type=itinerary_data.type,
-            budget=itinerary_data.budget,
+            budget=budget_value,  # Use the validated budget value
             name=itinerary_data.name,
             start_date=itinerary_data.start_date,
             end_date=itinerary_data.end_date,
@@ -144,29 +149,44 @@ async def generate_itinerary(
 
         schedule_items_to_add = []
         for item in generated_items:
-            place_details = all_places_map.get(item.get("place_id"))
-            if not place_details:
+            try:
+                place_details = all_places_map.get(item.get("place_id"))
+                if not place_details:
+                    logger.warning(f"AI returned unknown place_id, skipping: {item.get('place_id')}")
+                    continue
+
+                if "scheduled_date" not in item or "scheduled_time" not in item:
+                    logger.warning(f"AI response missing required fields, skipping: {item}")
+                    continue
+
+                scheduled_date_obj = datetime.strptime(item["scheduled_date"], "%Y-%m-%d").date()
+
+                schedule_items_to_add.append(
+                    ScheduleItemModel(
+                        itinerary_id=db_itinerary.id,
+                        place_id=place_details.id,
+                        place_name=place_details.name,
+                        place_type=next(iter(place_details.types or []), "attraction"),
+                        place_address=place_details.address,
+                        place_rating=place_details.rating,
+                        place_image=place_details.image,
+                        scheduled_date=scheduled_date_obj,
+                        scheduled_time=item["scheduled_time"],
+                        duration_minutes=item.get("duration_minutes", 60),
+                    )
+                )
+            except (ValueError, KeyError) as e:
+                logger.error(f"Could not parse schedule item from AI. Error: {e}. Item: {item}")
                 continue
 
-            schedule_items_to_add.append(
-                ScheduleItemModel(
-                    itinerary_id=db_itinerary.id,
-                    place_id=place_details.id,
-                    place_name=place_details.name,
-                    place_type=next(iter(place_details.types or []), "attraction"),
-                    place_address=place_details.address,
-                    place_rating=place_details.rating,
-                    place_image=place_details.image,
-                    scheduled_date=datetime.strptime(item["scheduled_date"], "%Y-%m-%d").date(),
-                    scheduled_time=item["scheduled_time"],
-                    duration_minutes=item.get("duration_minutes", 60),
-                )
+        if not schedule_items_to_add:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="AI generated a schedule, but all items were invalid."
             )
 
         db.add_all(schedule_items_to_add)
         await db.commit()
-
-        # This is needed to load the newly created items into the session
         await db.refresh(db_itinerary, attribute_names=["schedule_items"])
 
         return convert_to_pydantic(db_itinerary)
@@ -176,6 +196,7 @@ async def generate_itinerary(
         raise
     except Exception as e:
         await db.rollback()
+        logger.error(f"Failed to create generated itinerary: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create generated itinerary: {str(e)}",

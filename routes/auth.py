@@ -1,3 +1,5 @@
+# In routes/auth.py
+
 from fastapi import APIRouter, Depends, status, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy import select
@@ -6,6 +8,7 @@ from models.user import UserCreate, UserResponse, Token, UserPersonalization
 from services.auth import authenticate_user, get_current_user
 from database.db import User, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime  # Import the datetime module
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
@@ -21,8 +24,22 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
     if result.scalars().first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Create new user
-    db_user = User(**user.dict(exclude={"password"}))
+    # Convert date_of_birth string to a date object
+    try:
+        dob = datetime.strptime(user.date_of_birth, "%Y-%m-%d").date()
+    except ValueError:
+        # This will be triggered if the date format is incorrect
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid date_of_birth format. Use YYYY-MM-DD."
+        )
+
+    # Create a dictionary from the user model, excluding the password and original date string
+    user_data = user.dict(exclude={"password", "date_of_birth"})
+
+    # Create new user instance with the converted date object
+    db_user = User(**user_data, date_of_birth=dob)
+
     db_user.password = hash_password(user.password)
     db.add(db_user)
     await db.commit()

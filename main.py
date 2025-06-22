@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.auth import router as auth_router
 from routes.recommendations import router as recommendations_router
 from routes.itinerary import router as itinerary_router
-from routes.bookmarks import router as bookmark_router # <-- IMPORT THIS
+from routes.bookmarks import router as bookmark_router
+from routes.image import router as image_router
 from database.db import init_db
 from dotenv import load_dotenv
 import os
@@ -20,11 +21,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(recommendations_router, prefix="/api", tags=["recommendations"])
 app.include_router(itinerary_router, prefix="/api/itineraries", tags=["itineraries"])
 app.include_router(bookmark_router, prefix="/api/bookmarks", tags=["bookmarks"])
+app.include_router(image_router, prefix="/api", tags=["images"])
 
 @app.get("/")
 async def root():

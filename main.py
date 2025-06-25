@@ -1,5 +1,3 @@
-# file: main.py
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -7,18 +5,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 
-# Import all your routers
 from routes.auth import router as auth_router
 from routes.images import router as images_router
-# ... add other routers here
-
+from routes.itinerary import router as itinerary_router
+from routes.recommendations import router as recommendations_router
+from routes.bookmarks import router as bookmarks_router
 from database.db import init_db
 
 load_dotenv()
 
 app = FastAPI(title="InTra API")
 
-# Allow all origins for development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,17 +24,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create the 'uploads' directory if it doesn't exist
 Path("uploads").mkdir(exist_ok=True)
 
-# ✅ CRITICAL LINE: This tells FastAPI to serve files from the "uploads" directory
-# when a request comes in for a path starting with "/uploads".
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-# Include all your API routers
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(images_router, prefix="/api/images", tags=["images"])
-# ... add other routers here
+app.include_router(itinerary_router, prefix="/api/itineraries", tags=["itineraries"])
+app.include_router(recommendations_router, prefix="/api", tags=["recommendations"])
+app.include_router(bookmarks_router, prefix="/api/bookmarks", tags=["bookmarks"])
 
 @app.get("/")
 async def root():

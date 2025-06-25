@@ -1,3 +1,5 @@
+# file: main.py
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -5,12 +7,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 
-# Routers
+# Import all your routers
 from routes.auth import router as auth_router
-from routes.recommendations import router as recommendations_router
-from routes.itinerary import router as itinerary_router
-from routes.bookmarks import router as bookmark_router
-from routes.images import router as images_router  # ✅ NEW
+from routes.images import router as images_router
+# ... add other routers here
 
 from database.db import init_db
 
@@ -18,7 +18,7 @@ load_dotenv()
 
 app = FastAPI(title="InTra API")
 
-# CORS settings
+# Allow all origins for development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,26 +27,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create uploads directory if not exists
+# Create the 'uploads' directory if it doesn't exist
 Path("uploads").mkdir(exist_ok=True)
 
-# Mount uploads for static file serving
+# ✅ CRITICAL LINE: This tells FastAPI to serve files from the "uploads" directory
+# when a request comes in for a path starting with "/uploads".
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-# Include routers
+# Include all your API routers
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
-app.include_router(recommendations_router, prefix="/api", tags=["recommendations"])
-app.include_router(itinerary_router, prefix="/api/itineraries", tags=["itineraries"])
-app.include_router(bookmark_router, prefix="/api/bookmarks", tags=["bookmarks"])
-app.include_router(images_router, prefix="/api/images", tags=["images"])  # ✅ NEW
+app.include_router(images_router, prefix="/api/images", tags=["images"])
+# ... add other routers here
 
-# Root
 @app.get("/")
 async def root():
-    return {"message": "InTra API"}
+    return {"message": "InTra API is running"}
 
-# Database startup
 @app.on_event("startup")
 async def startup_event():
-    print(f"Connecting to database: {os.getenv('DB_NAME', 'Intra_DB')} at {os.getenv('DB_HOST', 'localhost')}")
     await init_db()

@@ -3,6 +3,7 @@
 
 ### temporary image upload folder ###
 /uploads/
+/test/uploads/
 
 ### dotenv ###
 .env

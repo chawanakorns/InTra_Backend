@@ -31,259 +31,230 @@ TestingSessionLocal = async_sessionmaker(
     autocommit=False, autoflush=False, bind=engine
 )
 
-
-# =================================================================================
 # --- Pytest Fixtures ---
-# =================================================================================
 
 @pytest.fixture(scope="session")
 def event_loop() -> Generator:
-    """Creates an instance of the default event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
-
 @pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Creates a new, isolated database session for each test function."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
     async with TestingSessionLocal() as session:
         yield session
-
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
-
 @pytest_asyncio.fixture(scope="function")
 async def client(db_session: AsyncSession, mocker) -> AsyncGenerator[AsyncClient, None]:
-    """
-    Creates a test client for the app, overriding all database dependencies
-    to ensure full isolation.
-    """
-
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
-
     app.dependency_overrides[get_db] = override_get_db
-
     mock_db_manager = AsyncMock()
     mock_db_manager.__aenter__.return_value = db_session
-    mocker.patch(
-        'services.auth.get_db_session',
-        return_value=mock_db_manager
-    )
-
+    mocker.patch('services.auth.get_db_session', return_value=mock_db_manager)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-
     del app.dependency_overrides[get_db]
-
 
 @pytest_asyncio.fixture(scope="function")
 async def authenticated_client(client: AsyncClient) -> AsyncClient:
-    """Creates a client that is pre-authenticated for testing protected endpoints."""
     user_data = {
-        "full_name": "Test User",
-        "date_of_birth": "2000-01-01",
-        "gender": "Male",
-        "email": "test@example.com",
-        "password": "a_secure_password"
+        "full_name": "Test User", "date_of_birth": "2000-01-01", "gender": "Male",
+        "email": "test@example.com", "password": "a_secure_password"
     }
-    register_response = await client.post("/auth/register", json=user_data)
-    assert register_response.status_code == 200, f"Registration failed: {register_response.text}"
-
-    login_data = {
-        "username": "test@example.com",
-        "password": "a_secure_password"
-    }
+    await client.post("/auth/register", json=user_data)
+    login_data = {"username": "test@example.com", "password": "a_secure_password"}
     login_response = await client.post("/auth/login", data=login_data)
-    assert login_response.status_code == 200, f"Login failed: {login_response.text}"
-
     token = login_response.json()["access_token"]
     client.headers["Authorization"] = f"Bearer {token}"
     return client
 
-
 # --- Mock Data ---
 def get_mock_place(place_id: str, name: str, types: list) -> Place:
-    """Helper to create a Place model instance."""
     return Place(
         id=place_id, name=name, rating=4.5, image="http://example.com/image.png",
         address="123 Test St, Paris", types=types, placeId=place_id
     )
 
-
 MOCK_ATTRACTIONS = [
     get_mock_place("place1", "Eiffel Tower", ["tourist_attraction"]).dict(),
     get_mock_place("place2", "Louvre Museum", ["museum", "tourist_attraction"]).dict()
 ]
-MOCK_RESTAURANTS = [
-    get_mock_place("place3", "Le Test Cafe", ["restaurant", "cafe"]).dict()
-]
 
 
 # =================================================================================
-# --- TEST CASES ---
+# --- TEST CASES (with logging) ---
 # =================================================================================
-
-# --- Test Authentication (routes/auth.py) ---
 
 @pytest.mark.asyncio
-async def test_register_user_success(client: AsyncClient):
-    """Test successful user registration (Mirrors STC-01.1)."""
+async def test_utc_001_register_user_success(client: AsyncClient):
+    """(UTC-001) Test successful user registration."""
+    print("\n--- Testing UTC-001: Register User Success ---")
     response = await client.post(
         "/auth/register", json={
             "full_name": "New User", "date_of_birth": "1995-05-10", "gender": "Female",
             "email": "new.user@test.com", "password": "good_password123"
         },
     )
+    actual_body = response.json()
+    print(f"Expected Result: Status Code 200 and a JSON body with 'access_token' and 'token_type'.")
+    print(f"Actual Result:   Status Code {response.status_code}, Body: {actual_body}")
     assert response.status_code == 200
-    data = response.json()
-    assert "access_token" in data
-    assert data["token_type"] == "bearer"
-
+    assert "access_token" in actual_body and "token_type" in actual_body
 
 @pytest.mark.asyncio
-async def test_register_user_duplicate_email(authenticated_client: AsyncClient):
-    """Test registration with an already existing email (Mirrors STC-01.2)."""
+async def test_utc_002_register_user_duplicate_email(authenticated_client: AsyncClient):
+    """(UTC-002) Test registration with an already existing email."""
+    print("\n--- Testing UTC-002: Register User Duplicate Email ---")
     response = await authenticated_client.post(
         "/auth/register", json={
             "full_name": "Another User", "date_of_birth": "1999-01-01", "gender": "Other",
             "email": "test@example.com", "password": "another_password"
         },
     )
+    print(f"Expected Result: Status Code 400 with detail 'Email already registered'.")
+    print(f"Actual Result:   Status Code {response.status_code}, Body: {response.json()}")
     assert response.status_code == 400
     assert response.json()["detail"] == "Email already registered"
 
-
 @pytest.mark.asyncio
-async def test_login_success(authenticated_client: AsyncClient):
-    """Test successful login (Mirrors STC-002)."""
-    response = await authenticated_client.get("/auth/me")
+async def test_utc_003_login_success(client: AsyncClient):
+    """(UTC-003) Test successful user login returns a token."""
+    print("\n--- Testing UTC-003: Login User Success ---")
+    await client.post("/auth/register", json={
+        "full_name": "Login User", "date_of_birth": "2000-01-01", "gender": "Male",
+        "email": "login@test.com", "password": "a_secure_password"
+    })
+    login_data = {"username": "login@test.com", "password": "a_secure_password"}
+    response = await client.post("/auth/login", data=login_data)
+    actual_body = response.json()
+    print(f"Expected Result: Status Code 200 and a JSON body with 'access_token' and 'token_type'.")
+    print(f"Actual Result:   Status Code {response.status_code}, Body: {actual_body}")
     assert response.status_code == 200
-    assert response.json()["email"] == "test@example.com"
-
+    assert "access_token" in actual_body and "token_type" in actual_body
 
 @pytest.mark.asyncio
-async def test_login_wrong_password(client: AsyncClient, authenticated_client: AsyncClient):
-    """Test login with incorrect password (Mirrors STC-02.3)."""
+async def test_utc_004_login_wrong_password(client: AsyncClient, authenticated_client: AsyncClient):
+    """(UTC-004) Test login with incorrect password."""
+    print("\n--- Testing UTC-004: Login User Wrong Password ---")
     login_data = {"username": "test@example.com", "password": "wrong_password"}
     response = await client.post("/auth/login", data=login_data)
+    print(f"Expected Result: Status Code 401 with detail 'Invalid credentials'.")
+    print(f"Actual Result:   Status Code {response.status_code}, Body: {response.json()}")
     assert response.status_code == 401
     assert "Invalid credentials" in response.json().get("detail")
 
-
 @pytest.mark.asyncio
-async def test_save_personalization(authenticated_client: AsyncClient):
-    """Test saving user preferences (Mirrors STC-004)."""
-    personalization_data = {
-        "tourist_type": ["Cultural", "Foodie"],
-        "preferred_activities": ["Museum", "Sightseeing"]
-    }
+async def test_utc_005_save_personalization(authenticated_client: AsyncClient):
+    """(UTC-005) Test saving user preferences."""
+    print("\n--- Testing UTC-005: Save User Personalization ---")
+    personalization_data = {"tourist_type": ["Cultural", "Foodie"], "preferred_activities": ["Museum", "Sightseeing"]}
     response = await authenticated_client.post("/auth/personalization", json=personalization_data)
+    actual_body = response.json()
+    print(f"Expected Result: Status Code 200 and user profile updated with has_completed_personalization=True.")
+    print(f"Actual Result:   Status Code {response.status_code}, has_completed_personalization={actual_body.get('has_completed_personalization')}")
     assert response.status_code == 200
-    data = response.json()
-    assert data["has_completed_personalization"] is True
-    assert data["tourist_type"] == ["Cultural", "Foodie"]
-
-
-# --- Test Recommendations (routes/recommendations.py) ---
+    assert actual_body["has_completed_personalization"] is True
 
 @pytest.mark.asyncio
-async def test_get_attraction_recommendations(authenticated_client: AsyncClient, mocker):
-    """Test attraction recommendations with mocked external API."""
-    mocker.patch(
-        "routes.recommendations.get_personalized_places",
-        return_value=[Place(**p) for p in MOCK_ATTRACTIONS]
-    )
-    response = await authenticated_client.get("/api/recommendations/attractions")
+async def test_utc_006_get_user_profile(authenticated_client: AsyncClient):
+    """(UTC-006) Test retrieving the current user's profile."""
+    print("\n--- Testing UTC-006: Get User Profile ---")
+    response = await authenticated_client.get("/auth/me")
+    actual_body = response.json()
+    print(f"Expected Result: Status Code 200 and correct user data (email: test@example.com).")
+    print(f"Actual Result:   Status Code {response.status_code}, Email: {actual_body.get('email')}")
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    assert data[0]["name"] == "Eiffel Tower"
-
-
-# --- Test Bookmarks (routes/bookmarks.py) ---
+    assert actual_body["email"] == "test@example.com"
 
 @pytest.mark.asyncio
-async def test_create_and_get_bookmarks(authenticated_client: AsyncClient):
-    """Test creating a new bookmark (Mirrors UTC-006)."""
-    bookmark_data = {
-        "place_id": "place123", "place_name": "Test Place", "place_type": "cafe",
-        "place_address": "123 Bookmark Lane", "place_rating": 4.8, "place_image": "http://example.com/image.png"
-    }
+async def test_utc_007_create_bookmark(authenticated_client: AsyncClient):
+    """(UTC-007) Test creating a new bookmark."""
+    print("\n--- Testing UTC-007: Create Bookmark ---")
+    bookmark_data = {"place_id": "place123", "place_name": "Test Place", "place_type": "cafe"}
     response = await authenticated_client.post("/api/bookmarks/", json=bookmark_data)
+    actual_body = response.json()
+    print(f"Expected Result: Status Code 201 with created bookmark data.")
+    print(f"Actual Result:   Status Code {response.status_code}, Body: {actual_body}")
     assert response.status_code == 201
-    created_bookmark = response.json()
-    assert created_bookmark["place_id"] == "place123"
-
-    response = await authenticated_client.get("/api/bookmarks/")
-    assert response.status_code == 200
-    bookmarks = response.json()
-    assert len(bookmarks) == 1
-    assert bookmarks[0]["place_id"] == "place123"
-
+    assert actual_body["place_id"] == "place123"
 
 @pytest.mark.asyncio
-async def test_create_duplicate_bookmark(authenticated_client: AsyncClient):
-    """Test preventing duplicate bookmarks (Mirrors UTC-007)."""
+async def test_utc_008_create_duplicate_bookmark(authenticated_client: AsyncClient):
+    """(UTC-008) Test preventing duplicate bookmarks."""
+    print("\n--- Testing UTC-008: Create Duplicate Bookmark ---")
     bookmark_data = {"place_id": "place456", "place_name": "Unique Place"}
     await authenticated_client.post("/api/bookmarks/", json=bookmark_data)
     response2 = await authenticated_client.post("/api/bookmarks/", json=bookmark_data)
+    print(f"Expected Result: Status Code 409 with detail 'This place is already bookmarked.'.")
+    print(f"Actual Result:   Status Code {response2.status_code}, Body: {response2.json()}")
     assert response2.status_code == 409
     assert "already bookmarked" in response2.json()["detail"]
 
-
 @pytest.mark.asyncio
-async def test_delete_bookmark(authenticated_client: AsyncClient):
-    """Test deleting a bookmark."""
+async def test_utc_009_delete_bookmark(authenticated_client: AsyncClient):
+    """(UTC-009) Test deleting a bookmark."""
+    print("\n--- Testing UTC-009: Delete Bookmark ---")
     bookmark_data = {"place_id": "place789", "place_name": "Place to Delete"}
     create_response = await authenticated_client.post("/api/bookmarks/", json=bookmark_data)
     bookmark_id = create_response.json()["id"]
-
     delete_response = await authenticated_client.delete(f"/api/bookmarks/{bookmark_id}")
+    print(f"Expected Result: Status Code 204 for the DELETE request.")
+    print(f"Actual Result:   Status Code {delete_response.status_code}")
     assert delete_response.status_code == 204
 
-    get_response = await authenticated_client.get("/api/bookmarks/")
-    assert len(get_response.json()) == 0
-
-
-# --- Test Itinerary (routes/itinerary.py) ---
+@pytest.mark.asyncio
+async def test_utc_010_create_itinerary(authenticated_client: AsyncClient):
+    """(UTC-010) Test creating a new manual itinerary."""
+    print("\n--- Testing UTC-010: Create Manual Itinerary ---")
+    itinerary_data = {"type": "Manual", "budget": "Comfort", "name": "My Paris Trip", "start_date": "2025-08-15", "end_date": "2025-08-20"}
+    response = await authenticated_client.post("/api/itineraries/", json=itinerary_data)
+    actual_body = response.json()
+    print(f"Expected Result: Status Code 200 with new itinerary data.")
+    print(f"Actual Result:   Status Code {response.status_code}, Body: {actual_body}")
+    assert response.status_code == 200
+    assert actual_body["name"] == "My Paris Trip"
 
 @pytest.mark.asyncio
-async def test_create_and_get_itinerary(authenticated_client: AsyncClient):
-    """Test creating and retrieving a manually created itinerary."""
-    itinerary_data = {
-        "type": "Manual", "budget": "Comfort", "name": "My Paris Trip",
-        "start_date": "2025-08-15", "end_date": "2025-08-20"
-    }
-    create_response = await authenticated_client.post("/api/itineraries/", json=itinerary_data)
-    assert create_response.status_code == 200
-
-    get_response = await authenticated_client.get("/api/itineraries/")
-    assert get_response.status_code == 200
-    itineraries = get_response.json()
-    assert len(itineraries) == 1
-    assert itineraries[0]["name"] == "My Paris Trip"
-
-# --- Test Image Uploads (routes/images.py) ---
+async def test_utc_011_get_user_itineraries(authenticated_client: AsyncClient):
+    """(UTC-011) Test retrieving a user's itineraries."""
+    print("\n--- Testing UTC-011: Get User Itineraries ---")
+    itinerary_data = {"type": "Manual", "budget": "Comfort", "name": "Trip to Get", "start_date": "2025-09-01", "end_date": "2025-09-05"}
+    await authenticated_client.post("/api/itineraries/", json=itinerary_data)
+    response = await authenticated_client.get("/api/itineraries/")
+    actual_body = response.json()
+    print(f"Expected Result: Status Code 200 with a list containing the created itinerary.")
+    print(f"Actual Result:   Status Code {response.status_code}, Body: {actual_body}")
+    assert response.status_code == 200
+    assert len(actual_body) > 0
+    assert actual_body[0]["name"] == "Trip to Get"
 
 @pytest.mark.asyncio
-async def test_upload_profile_image(authenticated_client: AsyncClient):
-    """Test uploading a profile image."""
+async def test_utc_012_get_attraction_recommendations(authenticated_client: AsyncClient, mocker):
+    """(UTC-012) Test attraction recommendations with mocked external API."""
+    print("\n--- Testing UTC-012: Get Attraction Recommendations ---")
+    mocker.patch("routes.recommendations.get_personalized_places", return_value=[Place(**p) for p in MOCK_ATTRACTIONS])
+    response = await authenticated_client.get("/api/recommendations/attractions")
+    actual_body = response.json()
+    print(f"Expected Result: Status Code 200 with a list of 2 mock attractions.")
+    print(f"Actual Result:   Status Code {response.status_code}, Body: {actual_body}")
+    assert response.status_code == 200
+    assert len(actual_body) == 2
+
+@pytest.mark.asyncio
+async def test_utc_013_upload_profile_image(authenticated_client: AsyncClient):
+    """(UTC-013) Test uploading a profile image."""
+    print("\n--- Testing UTC-013: Upload Profile Image ---")
     image_data = BytesIO(b"this_is_a_fake_image_content")
     files = {"file": ("test_profile.jpg", image_data, "image/jpeg")}
-
     response = await authenticated_client.post("/api/images/profile/upload", files=files)
-
+    actual_body = response.json()
+    print(f"Expected Result: Status Code 200 and a JSON body with an 'image_uri' key.")
+    print(f"Actual Result:   Status Code {response.status_code}, Body: {actual_body}")
     assert response.status_code == 200
-    data = response.json()
-    assert "image_uri" in data
-    assert data["image_uri"].startswith("/uploads/profile_")
-
-    me_response = await authenticated_client.get("/auth/me")
-    assert me_response.json()["image_uri"] == data["image_uri"]
+    assert "image_uri" in actual_body

@@ -85,11 +85,12 @@ async def create_itinerary(
         db: AsyncSession = Depends(get_db),
 ):
     try:
+        # Provide a default value for budget if it's missing from the request.
         budget_value = itinerary.budget if itinerary.budget else "Not Specified"
 
         db_itinerary = ItineraryModel(
             user_id=current_user.id,
-            type=itinerary.type,
+            type="Customized",
             budget=budget_value,
             name=itinerary.name,
             start_date=itinerary.start_date,
@@ -99,9 +100,10 @@ async def create_itinerary(
         await db.commit()
         await db.refresh(db_itinerary)
 
+        # Manually construct the response to ensure the correct type is sent back
         return ItineraryResponse(
             id=db_itinerary.id,
-            type=db_itinerary.type,
+            type="Customized",
             budget=db_itinerary.budget,
             name=db_itinerary.name,
             start_date=db_itinerary.start_date,
@@ -150,7 +152,7 @@ async def generate_itinerary(
 
         db_itinerary = ItineraryModel(
             user_id=current_user.id,
-            type=itinerary_data.type,
+            type="Auto-generated",
             budget=budget_value,
             name=itinerary_data.name,
             start_date=itinerary_data.start_date,

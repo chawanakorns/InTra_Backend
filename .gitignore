@@ -1,6 +1,10 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,dotenv
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,dotenv
 
+### temporary image upload folder ###
+/uploads/
+/test/uploads/
+
 ### dotenv ###
 .env
 

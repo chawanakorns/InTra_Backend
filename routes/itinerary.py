@@ -11,9 +11,23 @@ from services.generation_service import auto_generate_schedule
 from routes.recommendations import get_personalized_places
 from models.recommendations import Place
 import logging
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+class ScheduleItemCreate(BaseModel):
+    place_id: str
+    place_name: str
+    place_type: Optional[str] = None
+    place_address: Optional[str] = None
+    place_rating: Optional[float] = None
+    place_image: Optional[str] = None
+    scheduled_date: str
+    scheduled_time: str
+    duration_minutes: int
 
 
 def convert_to_pydantic(db_itinerary: ItineraryModel) -> ItineraryResponse:
@@ -76,8 +90,8 @@ async def create_itinerary(
 
         db_itinerary = ItineraryModel(
             user_id=current_user.id,
-            type=itinerary.type,
-            budget=budget_value,  # Use the validated budget value
+            type="Customized",
+            budget=budget_value,
             name=itinerary.name,
             start_date=itinerary.start_date,
             end_date=itinerary.end_date,
@@ -86,9 +100,10 @@ async def create_itinerary(
         await db.commit()
         await db.refresh(db_itinerary)
 
+        # Manually construct the response to ensure the correct type is sent back
         return ItineraryResponse(
             id=db_itinerary.id,
-            type=db_itinerary.type,
+            type="Customized",
             budget=db_itinerary.budget,
             name=db_itinerary.name,
             start_date=db_itinerary.start_date,
@@ -133,13 +148,12 @@ async def generate_itinerary(
                 detail="Failed to generate itinerary schedule from AI. Please try again."
             )
 
-        # Provide a default value for budget if it's missing from the request.
         budget_value = itinerary_data.budget if itinerary_data.budget else "Not Specified"
 
         db_itinerary = ItineraryModel(
             user_id=current_user.id,
-            type=itinerary_data.type,
-            budget=budget_value,  # Use the validated budget value
+            type="Auto-generated",
+            budget=budget_value,
             name=itinerary_data.name,
             start_date=itinerary_data.start_date,
             end_date=itinerary_data.end_date,
@@ -200,4 +214,115 @@ async def generate_itinerary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create generated itinerary: {str(e)}",
+        )
+
+
+@router.delete("/{itinerary_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_itinerary(
+    itinerary_id: int,
+    current_user: UserResponse = Depends(get_current_user_dependency),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Deletes a specific itinerary by its ID.
+    Ensures that only the owner of the itinerary can delete it.
+    """
+    stmt = select(ItineraryModel).where(
+        ItineraryModel.id == itinerary_id,
+        ItineraryModel.user_id == current_user.id
+    )
+    result = await db.execute(stmt)
+    db_itinerary = result.scalars().first()
+
+    if not db_itinerary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Itinerary not found or you don't have permission to delete it."
+        )
+
+    try:
+        await db.delete(db_itinerary)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to delete itinerary {itinerary_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete itinerary."
+        )
+    return
+
+
+@router.post("/{itinerary_id}/items", response_model=ScheduleItemResponse, status_code=status.HTTP_201_CREATED)
+async def add_schedule_item_to_itinerary(
+    itinerary_id: int,
+    item: ScheduleItemCreate,
+    current_user: UserResponse = Depends(get_current_user_dependency),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Adds a new schedule item to an existing itinerary.
+    """
+    stmt = select(ItineraryModel).where(
+        ItineraryModel.id == itinerary_id,
+        ItineraryModel.user_id == current_user.id
+    )
+    result = await db.execute(stmt)
+    db_itinerary = result.scalars().first()
+
+    if not db_itinerary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Itinerary not found or you don't have permission to access it."
+        )
+
+    try:
+        scheduled_date_obj = datetime.strptime(item.scheduled_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid scheduled_date format. Use YYYY-MM-DD."
+        )
+
+    if not (db_itinerary.start_date <= scheduled_date_obj <= db_itinerary.end_date):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Scheduled date must be within the itinerary's range ({db_itinerary.start_date} to {db_itinerary.end_date})."
+        )
+
+    db_schedule_item = ScheduleItemModel(
+        itinerary_id=itinerary_id,
+        place_id=item.place_id,
+        place_name=item.place_name,
+        place_type=item.place_type,
+        place_address=item.place_address,
+        place_rating=item.place_rating,
+        place_image=item.place_image,
+        scheduled_date=scheduled_date_obj,
+        scheduled_time=item.scheduled_time,
+        duration_minutes=item.duration_minutes
+    )
+
+    try:
+        db.add(db_schedule_item)
+        await db.commit()
+        await db.refresh(db_schedule_item)
+
+        return ScheduleItemResponse(
+            place_id=db_schedule_item.place_id,
+            place_name=db_schedule_item.place_name,
+            place_type=db_schedule_item.place_type,
+            place_address=db_schedule_item.place_address,
+            place_rating=db_schedule_item.place_rating,
+            place_image=db_schedule_item.place_image,
+            scheduled_date=db_schedule_item.scheduled_date.strftime("%Y-%m-%d"),
+            scheduled_time=db_schedule_item.scheduled_time,
+            duration_minutes=db_schedule_item.duration_minutes,
+        )
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to add schedule item: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to add item to itinerary."
         )

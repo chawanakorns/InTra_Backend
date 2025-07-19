@@ -6,6 +6,8 @@ from typing import Optional
 SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200
+# --- NEW: Expiration for password reset token (e.g., 15 minutes) ---
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 15
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -24,3 +26,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+# --- START: NEW FUNCTION FOR PASSWORD RESET TOKEN ---
+def create_password_reset_token(email: str) -> str:
+    """
+    Generates a JWT token for password reset.
+    """
+    expire = datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES)
+    to_encode = {
+        "exp": expire,
+        "sub": email,
+        "scope": "password-reset" # Add a scope to differentiate from access tokens
+    }
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+# --- END: NEW FUNCTION ---

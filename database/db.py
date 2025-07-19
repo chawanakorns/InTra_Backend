@@ -36,11 +36,11 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+    firebase_uid = Column(String(255), unique=True, index=True, nullable=False)
     full_name = Column(String(255), nullable=True)
     date_of_birth = Column(Date, nullable=True)
     gender = Column(String(50), nullable=True)
     email = Column(Text, unique=True, nullable=False, index=True)
-    password = Column(String(255), nullable=False)
     about_me = Column(Text, nullable=True)
     image_uri = Column(Text, nullable=True)
     background_uri = Column(Text, nullable=True)

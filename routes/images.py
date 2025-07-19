@@ -1,5 +1,3 @@
-# file: images.py
-
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from pathlib import Path
 import uuid
@@ -7,12 +5,10 @@ import shutil
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Literal
 
-# Ensure your imports match your project structure
+# --- MODIFIED IMPORTS ---
 from database.db import get_db, User
-from services.auth import get_current_user
+from services.firebase_auth import get_current_user # <-- Import the new dependency
 
-# ✅ FIX: The redundant prefix has been removed.
-# The prefix is now correctly handled only in main.py.
 router = APIRouter(tags=["images"])
 
 UPLOAD_DIR = Path("uploads")
@@ -61,6 +57,7 @@ async def _upload_image(
 async def upload_profile_image(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    # --- MODIFIED: This now correctly uses the Firebase auth dependency ---
     current_user: User = Depends(get_current_user)
 ):
     return await _upload_image(file, current_user, db, "profile")
@@ -70,6 +67,7 @@ async def upload_profile_image(
 async def upload_background_image(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    # --- MODIFIED: This now correctly uses the Firebase auth dependency ---
     current_user: User = Depends(get_current_user)
 ):
     return await _upload_image(file, current_user, db, "background")

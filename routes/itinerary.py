@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, orm
 from database.db import get_db
-from database.db import Itinerary as ItineraryModel, ScheduleItem as ScheduleItemModel
+from database.db import Itinerary as ItineraryModel, ScheduleItem as ScheduleItemModel, User
 from models.itinerary import ItineraryCreate, Itinerary as ItineraryResponse, ScheduleItem as ScheduleItemResponse
-from routes.auth import get_current_user_dependency
-from models.user import UserResponse
+# --- MODIFIED: Import the new dependency from the correct service ---
+from services.firebase_auth import get_current_user
 from datetime import datetime
 from services.generation_service import auto_generate_schedule
 from routes.recommendations import get_personalized_places
@@ -31,6 +31,7 @@ class ScheduleItemCreate(BaseModel):
 
 
 def convert_to_pydantic(db_itinerary: ItineraryModel) -> ItineraryResponse:
+    # ... (this function remains the same)
     return ItineraryResponse(
         id=db_itinerary.id,
         type=db_itinerary.type,
@@ -57,7 +58,8 @@ def convert_to_pydantic(db_itinerary: ItineraryModel) -> ItineraryResponse:
 
 @router.get("/", response_model=list[ItineraryResponse])
 async def get_user_itineraries(
-        current_user: UserResponse = Depends(get_current_user_dependency),
+        # --- MODIFIED: Use the new dependency ---
+        current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -81,13 +83,13 @@ async def get_user_itineraries(
 @router.post("/", response_model=ItineraryResponse)
 async def create_itinerary(
         itinerary: ItineraryCreate,
-        current_user: UserResponse = Depends(get_current_user_dependency),
+        # --- MODIFIED: Use the new dependency ---
+        current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
 ):
+    # ... (rest of the function is the same) ...
     try:
-        # Provide a default value for budget if it's missing from the request.
         budget_value = itinerary.budget if itinerary.budget else "Not Specified"
-
         db_itinerary = ItineraryModel(
             user_id=current_user.id,
             type="Customized",
@@ -99,8 +101,6 @@ async def create_itinerary(
         db.add(db_itinerary)
         await db.commit()
         await db.refresh(db_itinerary)
-
-        # Manually construct the response to ensure the correct type is sent back
         return ItineraryResponse(
             id=db_itinerary.id,
             type="Customized",
@@ -122,9 +122,11 @@ async def create_itinerary(
 @router.post("/generate", response_model=ItineraryResponse)
 async def generate_itinerary(
         itinerary_data: ItineraryCreate,
-        current_user: UserResponse = Depends(get_current_user_dependency),
+        # --- MODIFIED: Use the new dependency ---
+        current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
 ):
+    # ... (rest of the function is the same) ...
     try:
         user_preferences = {
             "tourist_type": current_user.tourist_type or [],
@@ -135,21 +137,15 @@ async def generate_itinerary(
         }
         attractions_task = get_personalized_places(user_preferences, "tourist_attraction")
         restaurants_task = get_personalized_places(user_preferences, "restaurant")
-
         attractions, restaurants = await attractions_task, await restaurants_task
-
         all_places_map = {p.id: p for p in attractions + restaurants}
-
         generated_items = await auto_generate_schedule(itinerary_data, current_user, attractions, restaurants)
-
         if not generated_items:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to generate itinerary schedule from AI. Please try again."
             )
-
         budget_value = itinerary_data.budget if itinerary_data.budget else "Not Specified"
-
         db_itinerary = ItineraryModel(
             user_id=current_user.id,
             type="Auto-generated",
@@ -160,7 +156,6 @@ async def generate_itinerary(
         )
         db.add(db_itinerary)
         await db.flush()
-
         schedule_items_to_add = []
         for item in generated_items:
             try:
@@ -168,13 +163,10 @@ async def generate_itinerary(
                 if not place_details:
                     logger.warning(f"AI returned unknown place_id, skipping: {item.get('place_id')}")
                     continue
-
                 if "scheduled_date" not in item or "scheduled_time" not in item:
                     logger.warning(f"AI response missing required fields, skipping: {item}")
                     continue
-
                 scheduled_date_obj = datetime.strptime(item["scheduled_date"], "%Y-%m-%d").date()
-
                 schedule_items_to_add.append(
                     ScheduleItemModel(
                         itinerary_id=db_itinerary.id,
@@ -192,19 +184,15 @@ async def generate_itinerary(
             except (ValueError, KeyError) as e:
                 logger.error(f"Could not parse schedule item from AI. Error: {e}. Item: {item}")
                 continue
-
         if not schedule_items_to_add:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="AI generated a schedule, but all items were invalid."
             )
-
         db.add_all(schedule_items_to_add)
         await db.commit()
         await db.refresh(db_itinerary, attribute_names=["schedule_items"])
-
         return convert_to_pydantic(db_itinerary)
-
     except HTTPException:
         await db.rollback()
         raise
@@ -220,26 +208,22 @@ async def generate_itinerary(
 @router.delete("/{itinerary_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_itinerary(
     itinerary_id: int,
-    current_user: UserResponse = Depends(get_current_user_dependency),
+    # --- MODIFIED: Use the new dependency ---
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Deletes a specific itinerary by its ID.
-    Ensures that only the owner of the itinerary can delete it.
-    """
+    # ... (rest of the function is the same) ...
     stmt = select(ItineraryModel).where(
         ItineraryModel.id == itinerary_id,
         ItineraryModel.user_id == current_user.id
     )
     result = await db.execute(stmt)
     db_itinerary = result.scalars().first()
-
     if not db_itinerary:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Itinerary not found or you don't have permission to delete it."
         )
-
     try:
         await db.delete(db_itinerary)
         await db.commit()
@@ -257,25 +241,22 @@ async def delete_itinerary(
 async def add_schedule_item_to_itinerary(
     itinerary_id: int,
     item: ScheduleItemCreate,
-    current_user: UserResponse = Depends(get_current_user_dependency),
+    # --- MODIFIED: Use the new dependency ---
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Adds a new schedule item to an existing itinerary.
-    """
+    # ... (rest of the function is the same) ...
     stmt = select(ItineraryModel).where(
         ItineraryModel.id == itinerary_id,
         ItineraryModel.user_id == current_user.id
     )
     result = await db.execute(stmt)
     db_itinerary = result.scalars().first()
-
     if not db_itinerary:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Itinerary not found or you don't have permission to access it."
         )
-
     try:
         scheduled_date_obj = datetime.strptime(item.scheduled_date, "%Y-%m-%d").date()
     except ValueError:
@@ -283,13 +264,11 @@ async def add_schedule_item_to_itinerary(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid scheduled_date format. Use YYYY-MM-DD."
         )
-
     if not (db_itinerary.start_date <= scheduled_date_obj <= db_itinerary.end_date):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Scheduled date must be within the itinerary's range ({db_itinerary.start_date} to {db_itinerary.end_date})."
         )
-
     db_schedule_item = ScheduleItemModel(
         itinerary_id=itinerary_id,
         place_id=item.place_id,
@@ -302,12 +281,10 @@ async def add_schedule_item_to_itinerary(
         scheduled_time=item.scheduled_time,
         duration_minutes=item.duration_minutes
     )
-
     try:
         db.add(db_schedule_item)
         await db.commit()
         await db.refresh(db_schedule_item)
-
         return ScheduleItemResponse(
             place_id=db_schedule_item.place_id,
             place_name=db_schedule_item.place_name,

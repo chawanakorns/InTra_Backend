@@ -1,23 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from database.db import get_db, Bookmark as BookmarkModel
-from models.bookmark import BookmarkCreate, BookmarkResponse
-from models.user import UserResponse
-from routes.auth import get_current_user_dependency
 from typing import List
+
+from database.db import get_db, Bookmark as BookmarkModel, User
+from models.bookmark import BookmarkCreate, BookmarkResponse
+from services.firebase_auth import get_current_user
 
 router = APIRouter()
 
 @router.post("/", response_model=BookmarkResponse, status_code=status.HTTP_201_CREATED)
 async def create_bookmark(
     bookmark: BookmarkCreate,
-    current_user: UserResponse = Depends(get_current_user_dependency),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Create a new bookmark for the current user.
-    """
     stmt_check = select(BookmarkModel).where(
         BookmarkModel.user_id == current_user.id,
         BookmarkModel.place_id == bookmark.place_id
@@ -37,12 +34,9 @@ async def create_bookmark(
 
 @router.get("/", response_model=List[BookmarkResponse])
 async def get_user_bookmarks(
-    current_user: UserResponse = Depends(get_current_user_dependency),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Retrieve all bookmarks for the current user.
-    """
     stmt = select(BookmarkModel).where(BookmarkModel.user_id == current_user.id)
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -50,12 +44,9 @@ async def get_user_bookmarks(
 @router.delete("/{bookmark_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_bookmark(
     bookmark_id: int,
-    current_user: UserResponse = Depends(get_current_user_dependency),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Delete a specific bookmark by its ID.
-    """
     stmt = select(BookmarkModel).where(
         BookmarkModel.id == bookmark_id,
         BookmarkModel.user_id == current_user.id
@@ -76,12 +67,9 @@ async def delete_bookmark(
 @router.get("/check/{place_id}", response_model=dict)
 async def check_if_bookmarked(
     place_id: str,
-    current_user: UserResponse = Depends(get_current_user_dependency),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Check if a place is already bookmarked by the current user.
-    """
     stmt = select(BookmarkModel).where(
         BookmarkModel.user_id == current_user.id,
         BookmarkModel.place_id == place_id

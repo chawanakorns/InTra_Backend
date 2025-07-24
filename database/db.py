@@ -34,9 +34,9 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
-
     id = Column(Integer, primary_key=True, index=True)
     firebase_uid = Column(String(255), unique=True, index=True, nullable=False)
+    fcm_token = Column(Text, nullable=True, unique=True)
     full_name = Column(String(255), nullable=True)
     date_of_birth = Column(Date, nullable=True)
     gender = Column(String(50), nullable=True)
@@ -50,13 +50,11 @@ class User(Base):
     preferred_cuisines = Column(JSON, nullable=True)
     preferred_dining = Column(JSON, nullable=True)
     preferred_times = Column(JSON, nullable=True)
-
     itineraries = relationship("Itinerary", back_populates="user", cascade="all, delete-orphan")
     bookmarks = relationship("Bookmark", back_populates="user", cascade="all, delete-orphan")
 
 class Itinerary(Base):
     __tablename__ = "itineraries"
-
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     type = Column(String(50), nullable=False)
@@ -64,13 +62,11 @@ class Itinerary(Base):
     name = Column(String(255), nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
-
     user = relationship("User", back_populates="itineraries")
     schedule_items = relationship("ScheduleItem", back_populates="itinerary", cascade="all, delete-orphan")
 
 class ScheduleItem(Base):
     __tablename__ = "schedule_items"
-
     id = Column(Integer, primary_key=True, index=True)
     itinerary_id = Column(Integer, ForeignKey("itineraries.id"), nullable=False)
     place_id = Column(String(255), nullable=False)
@@ -82,12 +78,11 @@ class ScheduleItem(Base):
     scheduled_date = Column(Date, nullable=False)
     scheduled_time = Column(String(50), nullable=False)
     duration_minutes = Column(Integer, default=60)
-
+    notification_sent = Column(Boolean, default=False, nullable=False)
     itinerary = relationship("Itinerary", back_populates="schedule_items")
 
 class Bookmark(Base):
     __tablename__ = "bookmarks"
-
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     place_id = Column(String(255), nullable=False)
@@ -96,7 +91,6 @@ class Bookmark(Base):
     place_address = Column(String(255), nullable=True)
     place_rating = Column(Float, nullable=True)
     place_image = Column(Text, nullable=True)
-
     user = relationship("User", back_populates="bookmarks")
     __table_args__ = (UniqueConstraint('user_id', 'place_id', name='_user_place_uc'),)
 

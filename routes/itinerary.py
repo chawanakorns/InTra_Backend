@@ -1,3 +1,5 @@
+# routes/itinerary.py
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, orm
@@ -32,6 +34,7 @@ class ScheduleItemCreate(BaseModel):
 
 
 def convert_to_pydantic(db_itinerary: ItineraryModel) -> ItineraryResponse:
+    # This function is safe as long as the schedule_items are pre-loaded.
     return ItineraryResponse(
         id=db_itinerary.id,
         type=db_itinerary.type,
@@ -52,7 +55,7 @@ async def get_user_itineraries(current_user: User = Depends(get_current_user), d
         stmt = (
             select(ItineraryModel)
             .where(ItineraryModel.user_id == current_user.id)
-            .options(orm.selectinload(ItineraryModel.schedule_items))
+            .options(orm.selectinload(ItineraryModel.schedule_items))  # Eagerly load schedule items
             .order_by(ItineraryModel.start_date.desc())
         )
         result = await db.execute(stmt)
@@ -71,10 +74,17 @@ async def create_itinerary(itinerary: ItineraryCreate, current_user: User = Depe
                                       name=itinerary.name, start_date=itinerary.start_date, end_date=itinerary.end_date)
         db.add(db_itinerary)
         await db.commit()
-        await db.refresh(db_itinerary)
+
+        # --- THE FIX IS HERE ---
+        # We must explicitly refresh the object and its relationship to prevent
+        # a lazy-loading I/O call when creating the Pydantic response.
+        await db.refresh(db_itinerary, attribute_names=["schedule_items"])
+
         return convert_to_pydantic(db_itinerary)
     except Exception as e:
         await db.rollback()
+        # Log the full error to the console for debugging
+        logger.error(f"Failed to create itinerary: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             detail=f"Failed to create itinerary: {str(e)}")
 
@@ -131,7 +141,7 @@ async def generate_itinerary(itinerary_data: ItineraryCreate, current_user: User
                                 detail="AI generated a schedule, but all items were invalid.")
         db.add_all(schedule_items_to_add)
         await db.commit()
-        await db.refresh(db_itinerary, attribute_names=["schedule_items"])
+        await db.refresh(db_itinerary, attribute_names=["schedule_items"])  # This is correct
         return convert_to_pydantic(db_itinerary)
     except HTTPException:
         await db.rollback()

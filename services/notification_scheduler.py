@@ -11,7 +11,7 @@ from firebase_admin import credentials
 
 if not firebase_admin._apps:
     try:
-        cred = credentials.Certificate("serviceAccountKey.json")
+        cred = credentials.Certificate("../serviceAccountKey.json")
         firebase_admin.initialize_app(cred)
         print("Scheduler: Firebase Admin SDK initialized.")
     except Exception as e:

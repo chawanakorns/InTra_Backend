@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from typing import List
 
 from database.db import get_db, Notification as NotificationModel, User
@@ -72,6 +72,20 @@ async def mark_notification_as_read(
     await db.commit()
     await db.refresh(db_notification)
     return db_notification
+
+
+@router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_all_notifications(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+):
+    """
+    Deletes all notifications for the currently authenticated user.
+    """
+    stmt = delete(NotificationModel).where(NotificationModel.user_id == current_user.id)
+    await db.execute(stmt)
+    await db.commit()
+    return
 
 
 @router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)

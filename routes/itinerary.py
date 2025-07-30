@@ -71,7 +71,10 @@ async def create_itinerary(itinerary: ItineraryCreate, current_user: User = Depe
                                       name=itinerary.name, start_date=itinerary.start_date, end_date=itinerary.end_date)
         db.add(db_itinerary)
         await db.commit()
-        await db.refresh(db_itinerary)
+
+        # --- THE FIX: Explicitly load the schedule_items relationship asynchronously ---
+        await db.refresh(db_itinerary, attribute_names=['schedule_items'])
+
         return convert_to_pydantic(db_itinerary)
     except Exception as e:
         await db.rollback()

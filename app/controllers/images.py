@@ -5,9 +5,9 @@ import shutil
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Literal
 
-# --- MODIFIED IMPORTS ---
-from database.db import get_db, User
-from services.firebase_auth import get_current_user # <-- Import the new dependency
+from app.database.connection import get_db
+from app.database.models import User
+from app.services.firebase_auth import get_current_user
 
 router = APIRouter(tags=["images"])
 

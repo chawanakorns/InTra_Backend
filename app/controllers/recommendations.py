@@ -1,17 +1,15 @@
 # file: app/controllers/recommendations.py
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from typing import List, Optional
 import os
 import httpx
 import google.generativeai as genai
-from pydantic import BaseModel
-from models.recommendations import Place
-from services.firebase_auth import get_optional_current_user
-from database.db import User
+from app.models.recommendations import Place
+from app.services.firebase_auth import get_optional_current_user
+from app.database.models import User
 import logging
 import time
-
 router = APIRouter()
 
 # --- THE FIX: DEFAULT_LATITUDE and DEFAULT_LONGITUDE have been removed ---

@@ -1,4 +1,4 @@
-# routes/itinerary.py
+# controllers/itinerary.py
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,14 +8,13 @@ import logging
 from pydantic import BaseModel
 from typing import Optional
 
-from database.db import get_db, User
-from database.db import Itinerary as ItineraryModel, ScheduleItem as ScheduleItemModel
-from models.itinerary import ItineraryCreate, Itinerary as ItineraryResponse, ScheduleItem as ScheduleItemResponse, \
-    ScheduleItemUpdate
-from services.firebase_auth import get_current_user
-from services.generation_service import auto_generate_schedule
-from routes.recommendations import get_personalized_places
-from models.recommendations import Place
+from app.database.connection import get_db
+from app.database.models import Itinerary as ItineraryModel, ScheduleItem as ScheduleItemModel, User
+from app.models.itinerary import ItineraryCreate, Itinerary as ItineraryResponse, ScheduleItem as ScheduleItemResponse, ScheduleItemUpdate
+from app.services.firebase_auth import get_current_user
+from app.services.generation_service import auto_generate_schedule
+from app.controllers.recommendations import get_personalized_places
+from app.models.recommendations import Place
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

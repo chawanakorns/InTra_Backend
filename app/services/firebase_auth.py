@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 
-from database.db import User, get_db
+from app.database.models import User
+from app.database.connection import get_db
 
 # Singleton pattern: Check if the app is already initialized
 if not firebase_admin._apps:
@@ -19,7 +20,7 @@ if not firebase_admin._apps:
 else:
     print("Firebase Admin SDK already initialized.")
 
-# Scheme to extract token. auto_error=False makes it optional for certain routes.
+# Scheme to extract token. auto_error=False makes it optional for certain controllers.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/sync", auto_error=False)
 
 

@@ -1,11 +1,9 @@
 import pytest
 import jwt
-from unittest.mock import AsyncMock, patch, MagicMock, call
-from datetime import date, datetime, timedelta
+from unittest.mock import AsyncMock, patch, MagicMock
+from datetime import date
 from types import SimpleNamespace
 import io  # Import io for mocking file open
-import os  # Import os for mocking UPLOAD_DIR (useful if UPLOAD_DIR were a Path object initially)
-from pathlib import Path  # Import real Path for type hinting in mocks if needed, not for patching directly
 
 from fastapi import HTTPException, UploadFile
 from pydantic import ValidationError
@@ -53,7 +51,7 @@ def mock_user_create_data():
 ###############################################################
 # 1. Unit Tests for `models`
 ###############################################################
-from models.user import UserCreate
+from app.models.user import UserCreate
 
 
 def test_utc_001_usercreate_password_too_short(mock_user_create_data):
@@ -69,7 +67,7 @@ def test_utc_002_usercreate_name_is_empty(mock_user_create_data):
 ###############################################################
 # 2. Unit Tests for `utils/security.py`
 ###############################################################
-from utils.security import hash_password, verify_password, create_access_token, SECRET_KEY, ALGORITHM
+from app.utils.security import hash_password, verify_password, create_access_token, SECRET_KEY, ALGORITHM
 
 
 def test_utc_003_hash_and_verify_password():
@@ -104,10 +102,10 @@ def test_utc_004_create_access_token():
 
 
 ###############################################################
-# 3. Unit Tests for `routes/images.py`
+# 3. Unit Tests for `controllers/images.py`
 ###############################################################
-from routes.images import _upload_image, UPLOAD_DIR
-from database.db import User  # Needed for type hinting in test
+from app.routes.images import _upload_image
+from app.database.db import User  # Needed for type hinting in test
 
 
 @pytest.mark.asyncio
@@ -131,10 +129,10 @@ def create_mock_path_instance_for_file(suffix):
     return mock_path
 
 
-@patch('routes.images.shutil.copyfileobj')
-@patch('routes.images.uuid.uuid4')
-@patch('routes.images.UPLOAD_DIR')  # PATCH THE GLOBAL VARIABLE INSTANCE
-@patch('routes.images.Path')  # PATCH THE PATH CLASS ITSELF
+@patch('controllers.images.shutil.copyfileobj')
+@patch('controllers.images.uuid.uuid4')
+@patch('controllers.images.UPLOAD_DIR')  # PATCH THE GLOBAL VARIABLE INSTANCE
+@patch('controllers.images.Path')  # PATCH THE PATH CLASS ITSELF
 @pytest.mark.asyncio
 async def test_utc_006_image_upload_profile_success(mock_Path_class, mock_upload_dir_global_var, mock_uuid,
                                                     mock_shutil, mock_db_session):
@@ -185,10 +183,10 @@ async def test_utc_006_image_upload_profile_success(mock_Path_class, mock_upload
     assert result == {"image_uri": expected_uri}
 
 
-@patch('routes.images.shutil.copyfileobj')
-@patch('routes.images.uuid.uuid4')
-@patch('routes.images.UPLOAD_DIR')  # PATCH THE GLOBAL VARIABLE INSTANCE
-@patch('routes.images.Path')  # PATCH THE PATH CLASS ITSELF
+@patch('controllers.images.shutil.copyfileobj')
+@patch('controllers.images.uuid.uuid4')
+@patch('controllers.images.UPLOAD_DIR')  # PATCH THE GLOBAL VARIABLE INSTANCE
+@patch('controllers.images.Path')  # PATCH THE PATH CLASS ITSELF
 @pytest.mark.asyncio
 async def test_utc_007_image_upload_background_success(mock_Path_class, mock_upload_dir_global_var, mock_uuid,
                                                        mock_shutil, mock_db_session):
@@ -222,10 +220,10 @@ async def test_utc_007_image_upload_background_success(mock_Path_class, mock_upl
     assert result == {"background_uri": "/uploads/bg_bg_uuid.png"}
 
 
-@patch('routes.images.shutil.copyfileobj')
-@patch('routes.images.uuid.uuid4')
-@patch('routes.images.UPLOAD_DIR')  # PATCH THE GLOBAL VARIABLE INSTANCE
-@patch('routes.images.Path')  # PATCH THE PATH CLASS ITSELF
+@patch('controllers.images.shutil.copyfileobj')
+@patch('controllers.images.uuid.uuid4')
+@patch('controllers.images.UPLOAD_DIR')  # PATCH THE GLOBAL VARIABLE INSTANCE
+@patch('controllers.images.Path')  # PATCH THE PATH CLASS ITSELF
 @pytest.mark.asyncio
 async def test_utc_008_image_upload_db_error(mock_Path_class, mock_upload_dir_global_var, mock_uuid, mock_shutil,
                                              mock_db_session):
@@ -249,10 +247,10 @@ async def test_utc_008_image_upload_db_error(mock_Path_class, mock_upload_dir_gl
 
 
 ###############################################################
-# 4. Unit Tests for `routes/itinerary.py`
+# 4. Unit Tests for `controllers/itinerary.py`
 ###############################################################
-from routes.itinerary import convert_to_pydantic, add_schedule_item_to_itinerary, ScheduleItemCreate
-from models.itinerary import Itinerary as ItineraryResponse
+from app.routes.itinerary import convert_to_pydantic, add_schedule_item_to_itinerary, ScheduleItemCreate
+from app.models.itinerary import Itinerary as ItineraryResponse
 
 
 def test_utc_009_itinerary_convert_to_pydantic():
@@ -267,7 +265,7 @@ def test_utc_009_itinerary_convert_to_pydantic():
     assert response.schedule_items[0].scheduled_date == "2025-01-02"
 
 
-@patch('routes.itinerary.select')
+@patch('controllers.itinerary.select')
 @pytest.mark.asyncio
 async def test_utc_010_itinerary_add_item_date_out_of_range(mock_select, mock_db_session):
     mock_result = MagicMock()
@@ -284,9 +282,9 @@ async def test_utc_010_itinerary_add_item_date_out_of_range(mock_select, mock_db
 
 
 ###############################################################
-# 5. Unit Tests for `routes/recommendations.py`
+# 5. Unit Tests for `controllers/recommendations.py`
 ###############################################################
-from routes.recommendations import calculate_relevance, build_place_types_query, process_results
+from app.routes.recommendations import calculate_relevance, build_place_types_query, process_results
 
 
 def test_utc_011_reco_calculate_relevance():
@@ -329,10 +327,10 @@ def test_utc_013_reco_process_results_filters_by_category():
 ###############################################################
 # 6. Unit Tests for `services/generation_service.py`
 ###############################################################
-from services.generation_service import generate_itinerary_prompt, auto_generate_schedule
-from models.user import UserResponse as PydanticUserResponse
-from models.itinerary import ItineraryCreate as PydanticItineraryCreate
-from models.recommendations import Place as PydanticPlace
+from app.services.generation_service import generate_itinerary_prompt, auto_generate_schedule
+from app.models.user import UserResponse as PydanticUserResponse
+from app.models.itinerary import ItineraryCreate as PydanticItineraryCreate
+from app.models.recommendations import Place as PydanticPlace
 
 
 def test_utc_014_generation_prompt_creation():

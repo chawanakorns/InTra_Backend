@@ -6,9 +6,10 @@ from firebase_admin import auth
 from typing import Optional
 from pydantic import BaseModel
 
-from models.user import UserResponse, UserUpdate, UserPersonalization
-from services.firebase_auth import get_current_user, oauth2_scheme
-from database.db import User, get_db
+from app.models.user import UserResponse, UserUpdate, UserPersonalization
+from app.services.firebase_auth import get_current_user, oauth2_scheme
+from app.database.connection import get_db
+from app.database.models import User
 
 router = APIRouter()
 

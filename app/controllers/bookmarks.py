@@ -3,9 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
 
-from database.db import get_db, Bookmark as BookmarkModel, User
-from models.bookmark import BookmarkCreate, BookmarkResponse
-from services.firebase_auth import get_current_user
+from app.database.connection import get_db
+from app.database.models import Bookmark as BookmarkModel, User
+from app.models.bookmark import BookmarkCreate, BookmarkResponse
+from app.services.firebase_auth import get_current_user
 
 router = APIRouter()
 

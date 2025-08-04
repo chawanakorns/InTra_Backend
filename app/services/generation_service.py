@@ -5,9 +5,9 @@ import json
 import google.generativeai as genai
 from typing import List, Dict, Optional
 
-from models.user import UserResponse
-from models.itinerary import ItineraryCreate
-from models.recommendations import Place
+from app.models.user import UserResponse
+from app.models.itinerary import ItineraryCreate
+from app.models.recommendations import Place
 
 
 # --- NEW HELPER FUNCTION ---

@@ -5,7 +5,7 @@
 serviceAccountKey.json
 
 ### temporary image upload folder ###
-/uploads/
+/app/uploads/
 /test/uploads/
 
 ### dotenv ###

@@ -9,6 +9,8 @@ import httpx
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials
+import sys
+import os
 
 # Firebase is still needed for initialization to access other services if needed,
 # but we won't use its messaging component here.
@@ -20,7 +22,10 @@ if not firebase_admin._apps:
     except Exception as e:
         print(f"Scheduler: FATAL Error initializing Firebase Admin SDK: {e}")
 
-from database.db import get_db_session, ScheduleItem, User, Itinerary
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from app.database.connection import get_db_session
+from app.database.models import ScheduleItem, User, Itinerary
 
 load_dotenv()
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
@@ -39,7 +44,7 @@ async def get_travel_time_seconds(origin: str, destination_place_id: str) -> int
             response.raise_for_status()
             data = response.json()
             if data['status'] == 'OK':
-                return data['routes'][0]['legs'][0]['duration']['value']
+                return data['controllers'][0]['legs'][0]['duration']['value']
     except Exception as e:
         print(f"Error fetching travel time: {e}")
     return 15 * 60

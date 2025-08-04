@@ -4,7 +4,7 @@ import asyncio
 import os
 from io import BytesIO
 from typing import AsyncGenerator, Generator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -16,8 +16,8 @@ os.environ["TESTING"] = "True"
 # --- App Imports ---
 # Make sure main is imported after the environment variable is set
 from main import app
-from database.db import Base, get_db
-from models.recommendations import Place
+from app.database.db import Base, get_db
+from app.models.recommendations import Place
 
 # --- Test DB Setup ---
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -225,7 +225,7 @@ async def test_itc_011_get_user_itineraries(authenticated_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_itc_012_get_attraction_recommendations(authenticated_client: AsyncClient, mocker):
-    mocker.patch("routes.recommendations.get_personalized_places",
+    mocker.patch("controllers.recommendations.get_personalized_places",
                  return_value=[Place(**p) for p in MOCK_ATTRACTIONS_DATA])
     response = await authenticated_client.get("/api/recommendations/attractions")
     print(f"\n--- ITC_012 - Get Attraction Recommendations ---")

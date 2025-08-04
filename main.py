@@ -5,16 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from dotenv import load_dotenv
-import os
 
-from routes.auth import router as auth_router
-from routes.images import router as images_router
-from routes.itinerary import router as itinerary_router
-from routes.recommendations import router as recommendations_router
-from routes.bookmarks import router as bookmarks_router
-# --- NEW: Import the notification router ---
-from routes.notification import router as notification_router
-from database.db import init_db
+# Updated imports to reflect new structure
+from app.controllers import auth, images, itinerary, recommendations, bookmarks, notification
+from app.database.connection import init_db
 
 load_dotenv()
 
@@ -29,17 +23,15 @@ app.add_middleware(
 )
 
 Path("uploads").mkdir(exist_ok=True)
-
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
-app.include_router(images_router, prefix="/api/images", tags=["images"])
-app.include_router(itinerary_router, prefix="/api/itineraries", tags=["itineraries"])
-app.include_router(recommendations_router, prefix="/api", tags=["recommendations"])
-app.include_router(bookmarks_router, prefix="/api/bookmarks", tags=["bookmarks"])
-# --- NEW: Include the notification router ---
-app.include_router(notification_router, prefix="/api/notifications", tags=["notifications"])
-
+# Include routers from the controllers directory
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
+app.include_router(images.router, prefix="/api/images", tags=["Images"])
+app.include_router(itinerary.router, prefix="/api/itineraries", tags=["Itineraries"])
+app.include_router(recommendations.router, prefix="/api", tags=["Recommendations"])
+app.include_router(bookmarks.router, prefix="/api/bookmarks", tags=["Bookmarks"])
+app.include_router(notification.router, prefix="/api/notifications", tags=["Notifications"])
 
 @app.get("/")
 async def root():

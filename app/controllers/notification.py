@@ -1,13 +1,14 @@
-# file: routes/notification.py
+# file: controllers/notification.py
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from typing import List
 
-from database.db import get_db, Notification as NotificationModel, User
-from models.notification import NotificationCreate, NotificationResponse
-from services.firebase_auth import get_current_user
+from app.database.connection import get_db
+from app.database.models import Notification as NotificationModel, User
+from app.models.notification import NotificationCreate, NotificationResponse
+from app.services.firebase_auth import get_current_user
 
 router = APIRouter()
 

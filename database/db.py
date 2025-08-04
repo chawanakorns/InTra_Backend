@@ -1,6 +1,9 @@
+# file: database/db.py
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
-from sqlalchemy import Column, Integer, String, Date, Text, Boolean, JSON, ForeignKey, Float, UniqueConstraint
+# --- MODIFIED: Added `func` for server-side timestamp ---
+from sqlalchemy import Column, Integer, String, Date, Text, Boolean, JSON, ForeignKey, Float, UniqueConstraint, DateTime, func
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -52,7 +55,10 @@ class User(Base):
     preferred_times = Column(JSON, nullable=True)
     itineraries = relationship("Itinerary", back_populates="user", cascade="all, delete-orphan")
     bookmarks = relationship("Bookmark", back_populates="user", cascade="all, delete-orphan")
+    # --- NEW: Add relationship to Notification ---
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
+# --- All other classes (Itinerary, ScheduleItem, Bookmark) remain the same ---
 class Itinerary(Base):
     __tablename__ = "itineraries"
     id = Column(Integer, primary_key=True, index=True)
@@ -93,6 +99,20 @@ class Bookmark(Base):
     place_image = Column(Text, nullable=True)
     user = relationship("User", back_populates="bookmarks")
     __table_args__ = (UniqueConstraint('user_id', 'place_id', name='_user_place_uc'),)
+
+# --- NEW: Notification DB Model ---
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    is_read = Column(Boolean, default=False, nullable=False)
+
+    user = relationship("User", back_populates="notifications")
+
 
 async def get_db():
     async with AsyncSessionLocal() as session:

@@ -75,10 +75,7 @@ async def create_itinerary(itinerary: ItineraryCreate, current_user: User = Depe
         db.add(db_itinerary)
         await db.commit()
 
-        # --- THE FIX IS HERE ---
-        # We must explicitly refresh the object and its relationship to prevent
-        # a lazy-loading I/O call when creating the Pydantic response.
-        await db.refresh(db_itinerary, attribute_names=["schedule_items"])
+        await db.refresh(db_itinerary, attribute_names=['schedule_items'])
 
         return convert_to_pydantic(db_itinerary)
     except Exception as e:

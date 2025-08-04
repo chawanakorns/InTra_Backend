@@ -1,8 +1,9 @@
-# routes/recommendations.py
+# file: app/controllers/recommendations.py
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Optional
 import os
+import httpx
 import google.generativeai as genai
 from pydantic import BaseModel
 from models.recommendations import Place
@@ -10,12 +11,10 @@ from services.firebase_auth import get_optional_current_user
 from database.db import User
 import logging
 import time
-import httpx  # <--- THE FIX: Import httpx instead of requests
 
 router = APIRouter()
 
-DEFAULT_LATITUDE = 48.8566
-DEFAULT_LONGITUDE = 2.3522
+# --- THE FIX: DEFAULT_LATITUDE and DEFAULT_LONGITUDE have been removed ---
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 GEMINI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
 
@@ -138,19 +137,22 @@ def process_results(all_place_results: List[dict], place_category: str, user_pre
         })
         seen_names.add(place_name)
     places.sort(key=lambda x: (x.get('relevance_score', 0), x.get('rating', 0)), reverse=True)
-    logger.info(f"Processed {len(all_place_results)} results into {len(places)} unique {place_category} places")
     return places
 
 
-# --- START OF FULLY REWRITTEN ASYNC FUNCTION ---
-async def get_personalized_places(user_preferences: dict, place_category: str = "tourist_attraction") -> List[Place]:
+async def get_personalized_places(
+        latitude: float,
+        longitude: float,
+        user_preferences: dict,
+        place_category: str = "tourist_attraction"
+) -> List[Place]:
     last_status = ""
 
     async def fetch_pages(client: httpx.AsyncClient, base_url: str):
         nonlocal last_status
         page_results = []
         url = base_url
-        for _ in range(3):  # Limit to 3 pages to avoid excessive calls
+        for _ in range(3):
             try:
                 response = await client.get(url, timeout=10)
                 data = response.json()
@@ -159,38 +161,33 @@ async def get_personalized_places(user_preferences: dict, place_category: str = 
                     page_results.extend(data['results'])
                     next_page_token = data.get('next_page_token')
                     if next_page_token:
-                        # Required delay before making next page token request
                         time.sleep(2)
                         url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?pagetoken={next_page_token}&key={GOOGLE_PLACES_API_KEY}"
                     else:
-                        break  # No more pages
+                        break
                 else:
-                    break  # API error
-            except (httpx.RequestError, httpx.TimeoutException) as e:
-                logger.error(f"HTTPX error during page fetch: {e}")
+                    break
+            except (httpx.RequestError, httpx.TimeoutException):
                 break
         return page_results
 
     try:
         types_query = build_place_types_query(user_preferences, place_category)
-        logger.info(f"Searching for {place_category} with types: {types_query}")
-
+        logger.info(f"Searching for {place_category} with types: {types_query} near ({latitude}, {longitude})")
         async with httpx.AsyncClient() as client:
-            primary_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={DEFAULT_LATITUDE},{DEFAULT_LONGITUDE}&radius=20000&type={types_query}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
+            primary_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=20000&type={types_query}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
             all_results = await fetch_pages(client, primary_url)
-
             if all_results:
                 processed_places = process_results(all_results, place_category, user_preferences)
                 return [Place(**p) for p in processed_places]
 
             logger.warning(f"No results for specific types: {types_query}. Falling back to general search.")
             fallback_type = "tourist_attraction" if place_category == "tourist_attraction" else "restaurant"
-            fallback_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={DEFAULT_LATITUDE},{DEFAULT_LONGITUDE}&radius=20000&type={fallback_type}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
+            fallback_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=20000&type={fallback_type}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
             all_results = await fetch_pages(client, fallback_url)
 
         if not all_results and last_status not in ['OK', 'ZERO_RESULTS']:
             raise HTTPException(status_code=400, detail=f"Google Places API error: {last_status}")
-
         places_as_dicts = process_results(all_results, place_category, user_preferences)
         logger.info(f"Found {len(places_as_dicts)} unique places using fallback query")
         return [Place(**p) for p in places_as_dicts]
@@ -199,15 +196,14 @@ async def get_personalized_places(user_preferences: dict, place_category: str = 
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- END OF FULLY REWRITTEN ASYNC FUNCTION ---
-
 @router.get("/recommendations/restaurants", response_model=List[Place])
 async def get_restaurant_recommendations(
+        latitude: float = Query(..., description="User's current latitude"),
+        longitude: float = Query(..., description="User's current longitude"),
         current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     user_email = current_user.email if current_user else 'Anonymous'
-    logger.info("=== RESTAURANT RECOMMENDATIONS REQUEST ===")
-    logger.info(f"User: {user_email}, Location: Hardcoded to ({DEFAULT_LATITUDE}, {DEFAULT_LONGITUDE})")
+    logger.info(f"=== RESTAURANT RECOMMENDATIONS REQUEST FOR {user_email} at ({latitude}, {longitude}) ===")
     user_preferences = {}
     if current_user:
         user_preferences = {
@@ -217,18 +213,19 @@ async def get_restaurant_recommendations(
             "preferred_dining": current_user.preferred_dining or [],
             "preferred_times": current_user.preferred_times or []
         }
-    result = await get_personalized_places(user_preferences, place_category="restaurant")
-    logger.info(f"Returning {len(result)} restaurant recommendations for {user_email}")
+    result = await get_personalized_places(latitude, longitude, user_preferences, place_category="restaurant")
+    logger.info(f"Returning {len(result)} restaurant recommendations")
     return result
 
 
 @router.get("/recommendations/attractions", response_model=List[Place])
 async def get_attraction_recommendations(
+        latitude: float = Query(..., description="User's current latitude"),
+        longitude: float = Query(..., description="User's current longitude"),
         current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     user_email = current_user.email if current_user else 'Anonymous'
-    logger.info("=== ATTRACTION RECOMMENDATIONS REQUEST ===")
-    logger.info(f"User: {user_email}, Location: Hardcoded to ({DEFAULT_LATITUDE}, {DEFAULT_LONGITUDE})")
+    logger.info(f"=== ATTRACTION RECOMMENDATIONS REQUEST FOR {user_email} at ({latitude}, {longitude}) ===")
     user_preferences = {}
     if current_user:
         user_preferences = {
@@ -238,21 +235,22 @@ async def get_attraction_recommendations(
             "preferred_dining": current_user.preferred_dining or [],
             "preferred_times": current_user.preferred_times or []
         }
-    result = await get_personalized_places(user_preferences, place_category="tourist_attraction")
-    logger.info(f"Returning {len(result)} attraction recommendations for {user_email}")
+    result = await get_personalized_places(latitude, longitude, user_preferences, place_category="tourist_attraction")
+    logger.info(f"Returning {len(result)} attraction recommendations")
     return result
 
 
-# --- Remainder of the file (get_popular_destinations, get_place_details_and_description) remains the same ---
-# It is also updated to use httpx for consistency and to prevent any future issues.
-
 @router.get("/recommendations/popular", response_model=List[Place])
-async def get_popular_destinations():
-    logger.info("=== POPULAR DESTINATIONS REQUEST ===")
+async def get_popular_destinations(
+        latitude: float = Query(..., description="User's current latitude"),
+        longitude: float = Query(..., description="User's current longitude"),
+):
+    logger.info(f"=== POPULAR DESTINATIONS REQUEST near ({latitude}, {longitude}) ===")
     if not GOOGLE_PLACES_API_KEY:
         raise HTTPException(status_code=500, detail="Server API key not configured.")
 
-    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={DEFAULT_LATITUDE},{DEFAULT_LONGITUDE}&radius=25000&type=tourist_attraction&key={GOOGLE_PLACES_API_KEY}"
+    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=25000&type=tourist_attraction&key={GOOGLE_PLACES_API_KEY}"
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=10)
@@ -273,7 +271,7 @@ async def get_popular_destinations():
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Request to external service timed out.")
     except httpx.RequestError as e:
-        raise HTTPException(status_code=503, detail=f"Could not connect to Google Places: {e}")
+        raise HTTPException(status_code=503, detail=f"Could not connect to Google Places service.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An internal server error occurred: {e}")
 
@@ -295,11 +293,11 @@ async def get_place_details_and_description(place_id: str):
         if not place_details:
             raise HTTPException(status_code=404, detail="Place not found.")
     except httpx.RequestError as e:
-        raise HTTPException(status_code=503, detail=f"Could not connect to Google Places: {e}")
+        raise HTTPException(status_code=503, detail="Could not connect to Google Places service.")
 
     try:
         if not GEMINI_API_KEY:
-            raise ValueError("Gemini API key is not configured.")
+            raise ValueError("Gemini API key is not configured on the server.")
 
         reviews_summary = " ".join([review.get('text', '') for review in place_details.get('reviews', [])[:2]])
         place_types = ", ".join(place_details.get('types', []))

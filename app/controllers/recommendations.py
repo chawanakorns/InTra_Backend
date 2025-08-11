@@ -55,8 +55,10 @@ PREFERENCE_MAPPING = {
 }
 
 
+# <-- THE FIX 1: Add the `images` field to the PlaceDetails model -->
 class PlaceDetails(Place):
     description: str
+    images: Optional[List[str]] = None
 
 
 def calculate_relevance(place_types: List[str], user_preferences: dict) -> float:
@@ -276,9 +278,11 @@ async def get_popular_destinations(
 
 @router.get("/recommendations/place/{place_id}/details", response_model=PlaceDetails)
 async def get_place_details_and_description(place_id: str):
+    # <-- THE FIX 2: Check if the new 'images' field exists in the cached data -->
     if place_id in description_cache:
         cached_data = description_cache[place_id]
-        return PlaceDetails(**cached_data)
+        if 'images' in cached_data:
+            return PlaceDetails(**cached_data)
 
     fields = "name,place_id,formatted_address,rating,types,photos,opening_hours,price_level,reviews"
     details_url = f"https://maps.googleapis.com/maps/api/place/details/json?place_id={place_id}&fields={fields}&key={GOOGLE_PLACES_API_KEY}"
@@ -312,17 +316,22 @@ async def get_place_details_and_description(place_id: str):
         logger.error(f"Gemini description generation failed: {e}")
         generated_description = f"Discover the charm of {place_details.get('name')}. This spot is a must-visit, offering unique experiences and beautiful sights."
 
-    photo_url = None
+    # <-- THE FIX 3: Fetch all photo URLs instead of just one -->
+    photo_urls = []
     if 'photos' in place_details and place_details['photos']:
-        photo_ref = place_details['photos'][0]['photo_reference']
-        photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_ref}&key={GOOGLE_PLACES_API_KEY}"
+        for photo in place_details['photos']:
+            photo_ref = photo['photo_reference']
+            photo_urls.append(f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_ref}&key={GOOGLE_PLACES_API_KEY}")
+
+    main_image_url = photo_urls[0] if photo_urls else None
 
     full_details = {
         "id": place_details['place_id'], "placeId": place_details['place_id'],
         "name": place_details.get('name'), "rating": place_details.get('rating'),
         "address": place_details.get('formatted_address'),
         "isOpen": place_details.get('opening_hours', {}).get('open_now'),
-        "types": place_details.get('types'), "image": photo_url,
+        "types": place_details.get('types'), "image": main_image_url,
+        "images": photo_urls,
         "priceLevel": place_details.get('price_level'),
         "description": generated_description.strip(), "relevance_score": 0.5
     }

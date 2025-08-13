@@ -256,3 +256,37 @@ async def get_place_details_and_description(place_id: str):
     response_model = PlaceDetails(**full_details)
     description_cache[place_id] = response_model.dict()
     return response_model
+
+
+@router.get("/recommendations/directions")
+async def get_directions(
+        origin: str = Query(..., description="User's current location as 'latitude,longitude'"),
+        destination_place_id: str = Query(..., description="Google Place ID of the destination")
+):
+    """
+    Provides a route polyline from an origin to a destination.
+    """
+    if not GOOGLE_PLACES_API_KEY:
+        raise HTTPException(status_code=500, detail="Server API key not configured.")
+
+    url = f"https://maps.googleapis.com/maps/api/directions/json?origin={origin}&destination=place_id:{destination_place_id}&key={GOOGLE_PLACES_API_KEY}"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=10)
+            response.raise_for_status()
+
+        data = response.json()
+        if data.get('status') == 'OK' and data.get('routes'):
+            # Extract the encoded polyline string from the first route
+            polyline = data['routes'][0]['overview_polyline']['points']
+            return {"encoded_polyline": polyline}
+        else:
+            logger.error(f"Google Directions API error: {data.get('status')} - {data.get('error_message', '')}")
+            raise HTTPException(status_code=400, detail="Could not find a route to the destination.")
+    except httpx.RequestError as e:
+        logger.error(f"HTTP request to Google Directions failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Could not connect to the directions service.")
+    except Exception as e:
+        logger.error(f"Error getting directions: {str(e)}")
+        raise HTTPException(status_code=500, detail="An internal server error occurred.")

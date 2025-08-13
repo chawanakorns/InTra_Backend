@@ -1,0 +1,24 @@
+# Python/Conda specific
+env/
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints
+conda-meta/
+pkgs/
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+
+# Git files
+.git
+.gitignore
+
+# IMPORTANT: Local secret files
+.env
+serviceAccountKey.json

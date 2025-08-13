@@ -1,0 +1,18 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./serviceAccountKey.json:/app/serviceAccountKey.json
+
+  scheduler:
+    build: .
+    # The command is now simpler, no need to activate a conda environment
+    command: ["python", "-m", "scripts.notification_scheduler"]
+    env_file:
+      - .env
+    volumes:
+      - ./serviceAccountKey.json:/app/serviceAccountKey.json

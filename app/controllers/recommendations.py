@@ -1,18 +1,22 @@
 # file: app/controllers/recommendations.py
 
-from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Optional
 import os
 import httpx
 import google.generativeai as genai
+from pydantic import BaseModel
 from app.models.recommendations import Place
 from app.services.firebase_auth import get_optional_current_user
 from app.database.models import User
 import logging
 import time
+
 router = APIRouter()
 
-# --- THE FIX: DEFAULT_LATITUDE and DEFAULT_LONGITUDE have been removed ---
+# --- THE FIX: Re-introduce default coordinates to be used as a fallback ---
+DEFAULT_LATITUDE = 48.8566
+DEFAULT_LONGITUDE = 2.3522
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 GEMINI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
 
@@ -55,10 +59,8 @@ PREFERENCE_MAPPING = {
 }
 
 
-# <-- THE FIX 1: Add the `images` field to the PlaceDetails model -->
 class PlaceDetails(Place):
     description: str
-    images: Optional[List[str]] = None
 
 
 def calculate_relevance(place_types: List[str], user_preferences: dict) -> float:
@@ -140,12 +142,21 @@ def process_results(all_place_results: List[dict], place_category: str, user_pre
     return places
 
 
+# --- START OF THE FIX ---
 async def get_personalized_places(
-        latitude: float,
-        longitude: float,
         user_preferences: dict,
-        place_category: str = "tourist_attraction"
+        place_category: str = "tourist_attraction",
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None
 ) -> List[Place]:
+    """
+    Fetches personalized places. Uses provided coordinates, or falls back to
+    a default central location if they are not provided (e.g., for AI generation).
+    """
+    lat_to_use = latitude if latitude is not None else DEFAULT_LATITUDE
+    lon_to_use = longitude if longitude is not None else DEFAULT_LONGITUDE
+    # --- END OF THE FIX ---
+
     last_status = ""
 
     async def fetch_pages(client: httpx.AsyncClient, base_url: str):
@@ -173,9 +184,9 @@ async def get_personalized_places(
 
     try:
         types_query = build_place_types_query(user_preferences, place_category)
-        logger.info(f"Searching for {place_category} with types: {types_query} near ({latitude}, {longitude})")
+        logger.info(f"Searching for {place_category} with types: {types_query} near ({lat_to_use}, {lon_to_use})")
         async with httpx.AsyncClient() as client:
-            primary_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=20000&type={types_query}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
+            primary_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat_to_use},{lon_to_use}&radius=20000&type={types_query}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
             all_results = await fetch_pages(client, primary_url)
             if all_results:
                 processed_places = process_results(all_results, place_category, user_preferences)
@@ -183,7 +194,7 @@ async def get_personalized_places(
 
             logger.warning(f"No results for specific types: {types_query}. Falling back to general search.")
             fallback_type = "tourist_attraction" if place_category == "tourist_attraction" else "restaurant"
-            fallback_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={latitude},{longitude}&radius=20000&type={fallback_type}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
+            fallback_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat_to_use},{lon_to_use}&radius=20000&type={fallback_type}&opennow=true&key={GOOGLE_PLACES_API_KEY}"
             all_results = await fetch_pages(client, fallback_url)
 
         if not all_results and last_status not in ['OK', 'ZERO_RESULTS']:
@@ -213,7 +224,12 @@ async def get_restaurant_recommendations(
             "preferred_dining": current_user.preferred_dining or [],
             "preferred_times": current_user.preferred_times or []
         }
-    result = await get_personalized_places(latitude, longitude, user_preferences, place_category="restaurant")
+    result = await get_personalized_places(
+        user_preferences=user_preferences,
+        place_category="restaurant",
+        latitude=latitude,
+        longitude=longitude
+    )
     logger.info(f"Returning {len(result)} restaurant recommendations")
     return result
 
@@ -235,7 +251,12 @@ async def get_attraction_recommendations(
             "preferred_dining": current_user.preferred_dining or [],
             "preferred_times": current_user.preferred_times or []
         }
-    result = await get_personalized_places(latitude, longitude, user_preferences, place_category="tourist_attraction")
+    result = await get_personalized_places(
+        user_preferences=user_preferences,
+        place_category="tourist_attraction",
+        latitude=latitude,
+        longitude=longitude
+    )
     logger.info(f"Returning {len(result)} attraction recommendations")
     return result
 
@@ -263,7 +284,6 @@ async def get_popular_destinations(
             places_as_dicts = process_results(raw_places, "tourist_attraction", {})
             places_as_dicts.sort(key=lambda x: x.get('rating', 0), reverse=True)
             places = [Place(**p) for p in places_as_dicts]
-            logger.info(f"Found {len(places)} popular destinations.")
             return places[:10]
         else:
             logger.error(f"Google Places API error: {status} - {data.get('error_message', '')}")
@@ -278,11 +298,9 @@ async def get_popular_destinations(
 
 @router.get("/recommendations/place/{place_id}/details", response_model=PlaceDetails)
 async def get_place_details_and_description(place_id: str):
-    # <-- THE FIX 2: Check if the new 'images' field exists in the cached data -->
     if place_id in description_cache:
         cached_data = description_cache[place_id]
-        if 'images' in cached_data:
-            return PlaceDetails(**cached_data)
+        return PlaceDetails(**cached_data)
 
     fields = "name,place_id,formatted_address,rating,types,photos,opening_hours,price_level,reviews"
     details_url = f"https://maps.googleapis.com/maps/api/place/details/json?place_id={place_id}&fields={fields}&key={GOOGLE_PLACES_API_KEY}"
@@ -316,22 +334,17 @@ async def get_place_details_and_description(place_id: str):
         logger.error(f"Gemini description generation failed: {e}")
         generated_description = f"Discover the charm of {place_details.get('name')}. This spot is a must-visit, offering unique experiences and beautiful sights."
 
-    # <-- THE FIX 3: Fetch all photo URLs instead of just one -->
-    photo_urls = []
+    photo_url = None
     if 'photos' in place_details and place_details['photos']:
-        for photo in place_details['photos']:
-            photo_ref = photo['photo_reference']
-            photo_urls.append(f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_ref}&key={GOOGLE_PLACES_API_KEY}")
-
-    main_image_url = photo_urls[0] if photo_urls else None
+        photo_ref = place_details['photos'][0]['photo_reference']
+        photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_ref}&key={GOOGLE_PLACES_API_KEY}"
 
     full_details = {
         "id": place_details['place_id'], "placeId": place_details['place_id'],
         "name": place_details.get('name'), "rating": place_details.get('rating'),
         "address": place_details.get('formatted_address'),
         "isOpen": place_details.get('opening_hours', {}).get('open_now'),
-        "types": place_details.get('types'), "image": main_image_url,
-        "images": photo_urls,
+        "types": place_details.get('types'), "image": photo_url,
         "priceLevel": place_details.get('price_level'),
         "description": generated_description.strip(), "relevance_score": 0.5
     }

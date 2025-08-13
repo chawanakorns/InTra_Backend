@@ -1,6 +1,17 @@
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, validator, ConfigDict
 from typing import Literal, Optional, List
-from datetime import date, datetime
+from datetime import date
+
+
+# --- START OF THE FIX ---
+# New model for updating settings
+class UserSettingsUpdate(BaseModel):
+    allow_smart_alerts: Optional[bool] = None
+    allow_opportunity_alerts: Optional[bool] = None
+    allow_real_time_tips: Optional[bool] = None
+
+
+# --- END OF THE FIX ---
 
 class UserCreate(BaseModel):
     full_name: str
@@ -21,12 +32,14 @@ class UserCreate(BaseModel):
             raise ValueError('Password must be at least 6 characters long')
         return v
 
+
 class UserPersonalization(BaseModel):
     tourist_type: Optional[List[str]] = None
     preferred_activities: Optional[List[str]] = None
     preferred_cuisines: Optional[List[str]] = None
     preferred_dining: Optional[List[str]] = None
     preferred_times: Optional[List[str]] = None
+
 
 class UserUpdate(BaseModel):
     fullName: Optional[str] = None
@@ -36,6 +49,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     imageUri: Optional[str] = None
     backgroundUri: Optional[str] = None
+
 
 class UserResponse(BaseModel):
     id: int
@@ -53,17 +67,24 @@ class UserResponse(BaseModel):
     preferred_dining: Optional[List[str]] = None
     preferred_times: Optional[List[str]] = None
 
-    class Config:
-        from_attributes = True
+    # --- START OF THE FIX ---
+    # Add new settings to the main user response model
+    allow_smart_alerts: bool
+    allow_opportunity_alerts: bool
+    allow_real_time_tips: bool
+    # --- END OF THE FIX ---
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
-# --- START: NEW MODELS FOR PASSWORD RESET ---
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
+
 
 class ResetPasswordRequest(BaseModel):
     token: str
@@ -74,5 +95,3 @@ class ResetPasswordRequest(BaseModel):
         if len(v) < 6:
             raise ValueError('Password must be at least 6 characters long')
         return v
-
-# --- END: NEW MODELS FOR PASSWORD RESET ---

@@ -6,7 +6,7 @@ from firebase_admin import auth
 from typing import Optional
 from pydantic import BaseModel
 
-from app.models.user import UserResponse, UserUpdate, UserPersonalization
+from app.models.user import UserResponse, UserUpdate, UserPersonalization, UserSettingsUpdate
 from app.services.firebase_auth import get_current_user, oauth2_scheme
 from app.database.connection import get_db
 from app.database.models import User
@@ -105,3 +105,25 @@ async def save_personalization(personalization: UserPersonalization, current_use
     await db.commit()
     await db.refresh(current_user)
     return UserResponse.from_orm(current_user)
+
+# --- START OF THE FIX ---
+@router.put("/me/settings", response_model=UserResponse)
+async def update_user_settings(
+    settings_update: UserSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Updates the notification and other settings for the current user.
+    """
+    if settings_update.allow_smart_alerts is not None:
+        current_user.allow_smart_alerts = settings_update.allow_smart_alerts
+    if settings_update.allow_opportunity_alerts is not None:
+        current_user.allow_opportunity_alerts = settings_update.allow_opportunity_alerts
+    if settings_update.allow_real_time_tips is not None:
+        current_user.allow_real_time_tips = settings_update.allow_real_time_tips
+
+    await db.commit()
+    await db.refresh(current_user)
+    return UserResponse.from_orm(current_user)
+# --- END OF THE FIX ---

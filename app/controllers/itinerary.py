@@ -1,16 +1,16 @@
-# controllers/itinerary.py
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, orm
 from datetime import datetime
 import logging
+import asyncio
 from pydantic import BaseModel
 from typing import Optional
 
 from app.database.connection import get_db
 from app.database.models import Itinerary as ItineraryModel, ScheduleItem as ScheduleItemModel, User
-from app.models.itinerary import ItineraryCreate, Itinerary as ItineraryResponse, ScheduleItem as ScheduleItemResponse, ScheduleItemUpdate
+from app.models.itinerary import ItineraryCreate, Itinerary as ItineraryResponse, ScheduleItem as ScheduleItemResponse, \
+    ScheduleItemUpdate
 from app.services.firebase_auth import get_current_user
 from app.services.generation_service import auto_generate_schedule
 from app.controllers.recommendations import get_personalized_places
@@ -33,7 +33,6 @@ class ScheduleItemCreate(BaseModel):
 
 
 def convert_to_pydantic(db_itinerary: ItineraryModel) -> ItineraryResponse:
-    # This function is safe as long as the schedule_items are pre-loaded.
     return ItineraryResponse(
         id=db_itinerary.id,
         type=db_itinerary.type,
@@ -54,7 +53,7 @@ async def get_user_itineraries(current_user: User = Depends(get_current_user), d
         stmt = (
             select(ItineraryModel)
             .where(ItineraryModel.user_id == current_user.id)
-            .options(orm.selectinload(ItineraryModel.schedule_items))  # Eagerly load schedule items
+            .options(orm.selectinload(ItineraryModel.schedule_items))
             .order_by(ItineraryModel.start_date.desc())
         )
         result = await db.execute(stmt)
@@ -73,13 +72,10 @@ async def create_itinerary(itinerary: ItineraryCreate, current_user: User = Depe
                                       name=itinerary.name, start_date=itinerary.start_date, end_date=itinerary.end_date)
         db.add(db_itinerary)
         await db.commit()
-
-        await db.refresh(db_itinerary, attribute_names=['schedule_items'])
-
+        await db.refresh(db_itinerary, attribute_names=["schedule_items"])
         return convert_to_pydantic(db_itinerary)
     except Exception as e:
         await db.rollback()
-        # Log the full error to the console for debugging
         logger.error(f"Failed to create itinerary: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             detail=f"Failed to create itinerary: {str(e)}")
@@ -89,64 +85,79 @@ async def create_itinerary(itinerary: ItineraryCreate, current_user: User = Depe
 async def generate_itinerary(itinerary_data: ItineraryCreate, current_user: User = Depends(get_current_user),
                              db: AsyncSession = Depends(get_db)):
     try:
-        user_preferences = {"tourist_type": current_user.tourist_type or [],
-                            "preferred_activities": current_user.preferred_activities or [],
-                            "preferred_cuisines": current_user.preferred_cuisines or [],
-                            "preferred_dining": current_user.preferred_dining or [],
-                            "preferred_times": current_user.preferred_times or []}
-        attractions_task = get_personalized_places(user_preferences, "tourist_attraction")
-        restaurants_task = get_personalized_places(user_preferences, "restaurant")
-        attractions, restaurants = await attractions_task, await restaurants_task
+        lat = itinerary_data.latitude
+        lon = itinerary_data.longitude
+
+        if lat is None or lon is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Latitude and Longitude are required for AI-powered generation."
+            )
+
+        user_preferences = {
+            "tourist_type": current_user.tourist_type or [],
+            "preferred_activities": current_user.preferred_activities or [],
+            "preferred_cuisines": current_user.preferred_cuisines or [],
+            "preferred_dining": current_user.preferred_dining or [],
+            "preferred_times": current_user.preferred_times or []
+        }
+
+        attractions_task = get_personalized_places(
+            latitude=lat,
+            longitude=lon,
+            user_preferences=user_preferences,
+            place_category="tourist_attraction"
+        )
+        restaurants_task = get_personalized_places(
+            latitude=lat,
+            longitude=lon,
+            user_preferences=user_preferences,
+            place_category="restaurant"
+        )
+
+        attractions, restaurants = await asyncio.gather(attractions_task, restaurants_task)
+
         all_places_map = {p.id: p for p in attractions + restaurants}
         generated_items = await auto_generate_schedule(itinerary_data, current_user, attractions, restaurants)
+
         if not generated_items:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                                 detail="Failed to generate itinerary schedule from AI. Please try again.")
+
         budget_value = itinerary_data.budget if itinerary_data.budget else "Not Specified"
-        db_itinerary = ItineraryModel(user_id=current_user.id, type="Auto-generated", budget=budget_value,
-                                      name=itinerary_data.name, start_date=itinerary_data.start_date,
-                                      end_date=itinerary_data.end_date)
+        db_itinerary = ItineraryModel(
+            user_id=current_user.id, type="Auto-generated", budget=budget_value,
+            name=itinerary_data.name, start_date=itinerary_data.start_date, end_date=itinerary_data.end_date
+        )
         db.add(db_itinerary)
         await db.flush()
+
         schedule_items_to_add = []
         for item in generated_items:
-            try:
-                place_details = all_places_map.get(item.get("place_id"))
-                if not place_details:
-                    logger.warning(f"AI returned unknown place_id, skipping: {item.get('place_id')}")
-                    continue
-                if "scheduled_date" not in item or "scheduled_time" not in item:
-                    logger.warning(f"AI response missing required fields, skipping: {item}")
-                    continue
-                scheduled_date_obj = datetime.strptime(item["scheduled_date"], "%Y-%m-%d").date()
-                schedule_items_to_add.append(ScheduleItemModel(itinerary_id=db_itinerary.id, place_id=place_details.id,
-                                                               place_name=place_details.name,
-                                                               place_type=next(iter(place_details.types or []),
-                                                                               "attraction"),
-                                                               place_address=place_details.address,
-                                                               place_rating=place_details.rating,
-                                                               place_image=place_details.image,
-                                                               scheduled_date=scheduled_date_obj,
-                                                               scheduled_time=item["scheduled_time"],
-                                                               duration_minutes=item.get("duration_minutes", 60)))
-            except (ValueError, KeyError) as e:
-                logger.error(f"Could not parse schedule item from AI. Error: {e}. Item: {item}")
+            place_details = all_places_map.get(item.get("place_id"))
+            if not place_details or "scheduled_date" not in item or "scheduled_time" not in item:
                 continue
+
+            schedule_items_to_add.append(ScheduleItemModel(
+                itinerary_id=db_itinerary.id, place_id=place_details.id,
+                place_name=place_details.name, place_type=next(iter(place_details.types or []), "attraction"),
+                place_address=place_details.address, place_rating=place_details.rating, place_image=place_details.image,
+                scheduled_date=datetime.strptime(item["scheduled_date"], "%Y-%m-%d").date(),
+                scheduled_time=item["scheduled_time"], duration_minutes=item.get("duration_minutes", 60)
+            ))
+
         if not schedule_items_to_add:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                detail="AI generated a schedule, but all items were invalid.")
+                                detail="AI generated an invalid schedule.")
+
         db.add_all(schedule_items_to_add)
         await db.commit()
-        await db.refresh(db_itinerary, attribute_names=["schedule_items"])  # This is correct
+        await db.refresh(db_itinerary, attribute_names=["schedule_items"])
         return convert_to_pydantic(db_itinerary)
-    except HTTPException:
-        await db.rollback()
-        raise
     except Exception as e:
         await db.rollback()
         logger.error(f"Failed to create generated itinerary: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail=f"Failed to create generated itinerary: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create generated itinerary: {e}")
 
 
 @router.delete("/{itinerary_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -251,6 +262,12 @@ async def update_schedule_item(
 
     item_to_update.scheduled_date = item_update.scheduled_date
     item_to_update.scheduled_time = item_update.scheduled_time
+
+    if item_update.duration_minutes is not None:
+        if item_update.duration_minutes > 0:
+            item_to_update.duration_minutes = item_update.duration_minutes
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duration must be a positive number.")
 
     try:
         await db.commit()

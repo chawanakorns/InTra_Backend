@@ -10,7 +10,8 @@ class ItineraryBase(BaseModel):
     budget: Optional[str] = None
 
 class ItineraryCreate(ItineraryBase):
-    pass
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class ScheduleItemUpdate(BaseModel):
     scheduled_date: date

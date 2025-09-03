@@ -16,7 +16,7 @@ os.environ["TESTING"] = "True"
 # --- App Imports ---
 # Make sure main is imported after the environment variable is set
 from main import app
-from app.database.db import Base, get_db
+from app.database.connection import Base, get_db
 from app.models.recommendations import Place
 
 # --- Test DB Setup ---

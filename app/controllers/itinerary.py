@@ -42,7 +42,7 @@ def convert_to_pydantic(db_itinerary: ItineraryModel) -> ItineraryResponse:
         end_date=db_itinerary.end_date,
         user_id=db_itinerary.user_id,
         schedule_items=[
-            ScheduleItemResponse.from_orm(item) for item in db_itinerary.schedule_items
+            ScheduleItemResponse.model_validate(item) for item in db_itinerary.schedule_items
         ]
     )
 
@@ -206,7 +206,7 @@ async def add_schedule_item_to_itinerary(itinerary_id: int, item: ScheduleItemCr
         db.add(db_schedule_item)
         await db.commit()
         await db.refresh(db_schedule_item)
-        return ScheduleItemResponse.from_orm(db_schedule_item)
+        return ScheduleItemResponse.model_validate(db_schedule_item)
     except Exception as e:
         await db.rollback()
         logger.error(f"Failed to add schedule item: {e}", exc_info=True)
@@ -272,7 +272,7 @@ async def update_schedule_item(
     try:
         await db.commit()
         await db.refresh(item_to_update)
-        return ScheduleItemResponse.from_orm(item_to_update)
+        return ScheduleItemResponse.model_validate(item_to_update)
     except Exception as e:
         await db.rollback()
         logger.error(f"Failed to update schedule item {item_id}: {e}", exc_info=True)

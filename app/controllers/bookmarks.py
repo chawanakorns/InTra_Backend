@@ -27,7 +27,7 @@ async def create_bookmark(
             detail="This place is already bookmarked.",
         )
 
-    db_bookmark = BookmarkModel(**bookmark.dict(), user_id=current_user.id)
+    db_bookmark = BookmarkModel(**bookmark.model_dump(), user_id=current_user.id)
     db.add(db_bookmark)
     await db.commit()
     await db.refresh(db_bookmark)

@@ -23,7 +23,7 @@ async def create_notification(
     Creates a new notification for the currently authenticated user.
     """
     db_notification = NotificationModel(
-        **notification.dict(),
+        **notification.model_dump(),
         user_id=current_user.id
     )
     db.add(db_notification)

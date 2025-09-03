@@ -53,7 +53,7 @@ async def sync_user(
     result = await db.execute(stmt)
     db_user = result.scalars().first()
     if db_user:
-        return UserResponse.from_orm(db_user)
+        return UserResponse.model_validate(db_user)
     else:
         try:
             firebase_user_record = auth.get_user(uid)
@@ -68,7 +68,7 @@ async def sync_user(
             db.add(new_user)
             await db.commit()
             await db.refresh(new_user)
-            return UserResponse.from_orm(new_user)
+            return UserResponse.model_validate(new_user)
         except Exception as e:
             await db.rollback()
             print(f"!!! DATABASE ERROR ON USER SYNC: {e}")
@@ -76,7 +76,7 @@ async def sync_user(
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
-    return UserResponse.from_orm(current_user)
+    return UserResponse.model_validate(current_user)
 
 @router.put("/me", response_model=UserResponse)
 async def update_me(user_update: UserUpdate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -92,7 +92,7 @@ async def update_me(user_update: UserUpdate, current_user: User = Depends(get_cu
         except ValueError: raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
     await db.commit()
     await db.refresh(current_user)
-    return UserResponse.from_orm(current_user)
+    return UserResponse.model_validate(current_user)
 
 @router.post("/personalization", response_model=UserResponse)
 async def save_personalization(personalization: UserPersonalization, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -104,7 +104,7 @@ async def save_personalization(personalization: UserPersonalization, current_use
     current_user.has_completed_personalization = True
     await db.commit()
     await db.refresh(current_user)
-    return UserResponse.from_orm(current_user)
+    return UserResponse.model_validate(current_user)
 
 # --- START OF THE FIX ---
 @router.put("/me/settings", response_model=UserResponse)
@@ -125,5 +125,5 @@ async def update_user_settings(
 
     await db.commit()
     await db.refresh(current_user)
-    return UserResponse.from_orm(current_user)
+    return UserResponse.model_validate(current_user)
 # --- END OF THE FIX ---

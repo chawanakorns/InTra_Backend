@@ -254,7 +254,7 @@ async def get_place_details_and_description(place_id: str):
         "description": desc.strip(), "relevance_score": 0.5
     }
     response_model = PlaceDetails(**full_details)
-    description_cache[place_id] = response_model.dict()
+    description_cache[place_id] = response_model.model_dump()
     return response_model
 
 

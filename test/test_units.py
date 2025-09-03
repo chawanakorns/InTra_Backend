@@ -104,8 +104,8 @@ def test_utc_004_create_access_token():
 ###############################################################
 # 3. Unit Tests for `controllers/images.py`
 ###############################################################
-from app.routes.images import _upload_image
-from app.database.db import User  # Needed for type hinting in test
+from app.controllers.images import _upload_image
+from app.database.models import User  # Needed for type hinting in test
 
 
 @pytest.mark.asyncio

@@ -13,9 +13,13 @@ class ItineraryCreate(ItineraryBase):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
+# --- START OF THE FIX ---
 class ScheduleItemUpdate(BaseModel):
     scheduled_date: date
     scheduled_time: str
+    # Add the missing optional field
+    duration_minutes: Optional[int] = None
+# --- END OF THE FIX ---
 
 class ScheduleItem(BaseModel):
     id: int

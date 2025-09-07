@@ -72,7 +72,10 @@ async def create_itinerary(itinerary: ItineraryCreate, current_user: User = Depe
                                       name=itinerary.name, start_date=itinerary.start_date, end_date=itinerary.end_date)
         db.add(db_itinerary)
         await db.commit()
+        # --- START OF THE FIX ---
+        # Eagerly load the 'schedule_items' relationship to prevent lazy loading in an async context.
         await db.refresh(db_itinerary, attribute_names=["schedule_items"])
+        # --- END OF THE FIX ---
         return convert_to_pydantic(db_itinerary)
     except Exception as e:
         await db.rollback()
@@ -152,7 +155,10 @@ async def generate_itinerary(itinerary_data: ItineraryCreate, current_user: User
 
         db.add_all(schedule_items_to_add)
         await db.commit()
+        # --- START OF THE FIX ---
+        # Eagerly load the 'schedule_items' relationship to prevent lazy loading in an async context.
         await db.refresh(db_itinerary, attribute_names=["schedule_items"])
+        # --- END OF THE FIX ---
         return convert_to_pydantic(db_itinerary)
     except Exception as e:
         await db.rollback()

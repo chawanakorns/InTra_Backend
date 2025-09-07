@@ -435,3 +435,28 @@ async def test_itc_021_clear_all_notifications(authenticated_client: AsyncClient
 
     get_resp_after = await authenticated_client.get("/api/notifications/")
     assert len(get_resp_after.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_itc_022_update_notification_settings(authenticated_client: AsyncClient, test_user: User):
+    """Tests ITC-022: A user can update their notification settings and the change is persisted."""
+    # 1. Verification: Check the initial state (should be default True)
+    get_response_before = await authenticated_client.get("/auth/me")
+    assert get_response_before.status_code == 200
+    assert get_response_before.json()["allow_smart_alerts"] is True
+
+    # 2. Action: Send PUT request to update the setting to False
+    update_data = {"allow_smart_alerts": False, "allow_opportunity_alerts": True}
+    put_response = await authenticated_client.put("/auth/me/settings", json=update_data)
+
+    # 3. Assertions: Check the response from the PUT request
+    assert put_response.status_code == 200
+    put_json = put_response.json()
+    assert put_json["allow_smart_alerts"] is False
+    assert put_json["allow_opportunity_alerts"] is True # Ensure other settings are respected
+    assert put_json["email"] == test_user.email # Ensure it's the correct user object
+
+    # 4. Verification: Fetch the user profile again to ensure the change was saved
+    get_response_after = await authenticated_client.get("/auth/me")
+    assert get_response_after.status_code == 200
+    assert get_response_after.json()["allow_smart_alerts"] is False

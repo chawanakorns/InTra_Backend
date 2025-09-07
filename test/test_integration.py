@@ -220,6 +220,32 @@ async def test_itc_011_get_user_itineraries(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_itc_012_get_attraction_recommendations(authenticated_client: AsyncClient, mocker):
+    """Tests ITC-012: Get attraction recommendations with a mocked service."""
+    # 1. Setup: Create mock response data from the service
+    mock_places_response = [
+        Place(id="place1", name="Eiffel Tower", rating=4.5, placeId="place1"),
+        Place(id="place2", name="Louvre Museum", rating=4.7, placeId="place2")
+    ]
+    # 2. Action: Patch the service function that the controller calls
+    mocker.patch(
+        'app.controllers.recommendations.get_personalized_places',
+        new_callable=AsyncMock,
+        return_value=mock_places_response
+    )
+
+    # 3. Execution: Call the API endpoint
+    response = await authenticated_client.get("/api/recommendations/attractions?latitude=48.8584&longitude=2.2945")
+
+    # 4. Assertions
+    assert response.status_code == 200
+    response_data = response.json()
+    assert len(response_data) == 2
+    assert response_data[0]["name"] == "Eiffel Tower"
+    assert response_data[1]["id"] == "place2"
+
+
+@pytest.mark.asyncio
 async def test_itc_013_upload_profile_image(authenticated_client: AsyncClient):
     image_data = BytesIO(b"this_is_a_fake_image_content")
     files = {"file": ("test_profile.jpg", image_data, "image/jpeg")}

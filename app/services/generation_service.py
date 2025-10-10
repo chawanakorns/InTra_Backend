@@ -131,7 +131,7 @@ async def auto_generate_schedule(
         print("Warning: Not enough places available after filtering by budget. Generation may fail.")
         # We can still proceed, the AI might use what's left, or we could return an error here.
 
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    model = genai.GenerativeModel('gemini-flash-latest')
 
     # Pass the newly filtered lists to the prompt generator
     prompt = generate_itinerary_prompt(itinerary_details, user, filtered_attractions, filtered_restaurants)

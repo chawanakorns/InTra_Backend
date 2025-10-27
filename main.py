@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Updated imports to reflect new structure
-from app.controllers import auth, images, itinerary, recommendations, bookmarks, notification
+from app.controllers import auth, images, itinerary, recommendations, bookmarks, notification, admin
 from app.database.connection import init_db
 
 load_dotenv()
@@ -32,6 +32,7 @@ app.include_router(itinerary.router, prefix="/api/itineraries", tags=["Itinerari
 app.include_router(recommendations.router, prefix="/api", tags=["Recommendations"])
 app.include_router(bookmarks.router, prefix="/api/bookmarks", tags=["Bookmarks"])
 app.include_router(notification.router, prefix="/api/notifications", tags=["Notifications"])
+app.include_router(admin.router, prefix="/api", tags=["Admin"])
 
 @app.get("/")
 async def root():

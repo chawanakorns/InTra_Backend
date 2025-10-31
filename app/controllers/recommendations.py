@@ -23,7 +23,7 @@ if not GEMINI_API_KEY:
     logger.error("FATAL: GOOGLE_GEMINI_API_KEY is not set in the environment.")
 else:
     genai.configure(api_key=GEMINI_API_KEY)
-    generation_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    generation_model = genai.GenerativeModel('gemini-flash-latest')
 
 description_cache = {}
 

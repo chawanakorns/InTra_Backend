@@ -25,6 +25,7 @@ class ScheduleItem(BaseModel):
     id: int
     place_id: str
     place_name: str
+    description: Optional[str] = None
     place_type: Optional[str] = None
     place_address: Optional[str] = None
     place_rating: Optional[float] = None
